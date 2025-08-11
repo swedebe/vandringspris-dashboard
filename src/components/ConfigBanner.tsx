@@ -3,8 +3,10 @@ import { configSourceLabel, hasSupabaseConfig } from "@/lib/config";
 
 export default function ConfigBanner() {
   const hasConfig = hasSupabaseConfig();
-  const isDev = import.meta.env.DEV;
+  const isProd = import.meta.env.MODE === 'production';
   const source = configSourceLabel();
+  const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
+  const isAdmin = params.get('admin') === '1';
 
   if (!hasConfig) {
     return (
@@ -14,10 +16,10 @@ export default function ConfigBanner() {
     );
   }
 
-  if (isDev) {
+  if (!isProd) {
     return (
       <div className="w-full text-center text-xs py-1 bg-muted text-foreground">
-        Config source: {source}
+        Config source: {source} {isAdmin && <><span className="mx-2">•</span><Link to="/setup" className="underline text-primary">Setup</Link></>}
       </div>
     );
   }

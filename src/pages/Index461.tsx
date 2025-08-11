@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAppTexts, t } from "@/hooks/useAppTexts";
 import { formatSecondsToHMS } from "@/lib/utils";
 import { hasSupabaseConfig, getProxyBaseUrl } from "@/lib/config";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 const CLUB_ID = 461;
 
 type Result = {
@@ -274,7 +275,8 @@ export default function Index461() {
   };
 
   async function callProxy(path: string) {
-    const base = import.meta.env.VITE_PROXY_BASE_URL as string;
+    const base = getProxyBaseUrl().url ?? "";
+    if (!base) throw new Error("PROXY_BASE_URL not set");
     const res = await fetch(`${base}${path}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -496,15 +498,36 @@ export default function Index461() {
       {/* Dev logs and manual triggers */}
       <section className="space-y-3">
         <div className="flex gap-2">
-          <Button onClick={() => handleProxy("/api/update-persons", "Uppdatera personer")}>
-            {t(texts, "button.updatePersons", "Uppdatera personer")}
-          </Button>
-          <Button onClick={() => handleProxy("/api/update-events", "Uppdatera tävlingar")}>
-            {t(texts, "button.updateEvents", "Uppdatera tävlingar")}
-          </Button>
-          <Button onClick={() => handleProxy("/api/update-results", "Uppdatera resultat")}>
-            {t(texts, "button.updateResults", "Uppdatera resultat")}
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span>
+                <Button disabled={!getProxyBaseUrl().url} onClick={() => handleProxy("/api/update-persons", "Uppdatera personer")}>
+                  {t(texts, "button.updatePersons", "Uppdatera personer")}
+                </Button>
+              </span>
+            </TooltipTrigger>
+            {!getProxyBaseUrl().url && <TooltipContent>PROXY_BASE_URL not set</TooltipContent>}
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span>
+                <Button disabled={!getProxyBaseUrl().url} onClick={() => handleProxy("/api/update-events", "Uppdatera tävlingar")}>
+                  {t(texts, "button.updateEvents", "Uppdatera tävlingar")}
+                </Button>
+              </span>
+            </TooltipTrigger>
+            {!getProxyBaseUrl().url && <TooltipContent>PROXY_BASE_URL not set</TooltipContent>}
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span>
+                <Button disabled={!getProxyBaseUrl().url} onClick={() => handleProxy("/api/update-results", "Uppdatera resultat")}>
+                  {t(texts, "button.updateResults", "Uppdatera resultat")}
+                </Button>
+              </span>
+            </TooltipTrigger>
+            {!getProxyBaseUrl().url && <TooltipContent>PROXY_BASE_URL not set</TooltipContent>}
+          </Tooltip>
           <Button variant="secondary" onClick={refreshLogs}>
             {t(texts, "button.update", "Uppdatera")}
           </Button>

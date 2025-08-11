@@ -19,6 +19,23 @@
 
   <body>
     <div id="root"></div>
+    <script>
+      (function() {
+        try {
+          var xhr = new XMLHttpRequest();
+          xhr.open('GET', '/runtime-config.json', false);
+          xhr.send(null);
+          if (xhr.status >= 200 && xhr.status < 300) {
+            window.__RUNTIME_CONFIG = JSON.parse(xhr.responseText);
+          } else {
+            window.__RUNTIME_CONFIG = {};
+          }
+        } catch (e) {
+          window.__RUNTIME_CONFIG = {};
+          console.warn('[Config] Failed to load runtime-config.json', e);
+        }
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
