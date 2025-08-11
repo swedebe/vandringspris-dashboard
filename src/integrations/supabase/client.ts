@@ -2,11 +2,12 @@
 import { createClient } from '@supabase/supabase-js';
 
 
-const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL as string) || "https://wpmmddhvwgzqvijmushb.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndwbW1kZGh2d2d6cXZpam11c2hiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDkyMjA2MjMsImV4cCI6MjA2NDc5NjYyM30.UBx4sa8R2TR4HRAp-J7cyfHI0yDqCypg4bWuPItlLB8";
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
-if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
-  console.warn("[Config] VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY missing. Using fallback defaults for preview. Configure envs for production.");
+if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
+  console.error("[Config] Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY");
+  throw new Error("Supabase URL and anon key are required. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in environment settings.");
 }
 
 // Import the supabase client like this:

@@ -90,7 +90,7 @@ function useResults(params: {
         _offset: 0,
       });
       if (error) throw error;
-      return (data ?? []) as Result[];
+      return ((data ?? []) as Result[]).filter((r) => r.personsex != null);
     },
   });
 }
@@ -117,11 +117,13 @@ function StatsTable({
   title,
   rows,
   valueLabel,
+  noDataText,
   onOpenDrilldown,
 }: {
   title: string;
   rows: { personid: number; name: string; value: number; usedItems?: Result[] }[];
   valueLabel: string;
+  noDataText: string;
   onOpenDrilldown: (row: { personid: number; name: string; usedItems?: Result[] }) => void;
 }) {
   return (
@@ -131,7 +133,7 @@ function StatsTable({
       </CardHeader>
       <CardContent>
         {rows.length === 0 ? (
-          <div className="text-sm text-muted-foreground">Ingen data finns</div>
+          <div className="text-sm text-muted-foreground">{noDataText}</div>
         ) : (
           <Table>
             <TableHeader>
@@ -176,6 +178,20 @@ export default function Index461() {
     "button.updatePersons",
     "button.updateEvents",
     "button.updateResults",
+    // Table titles and labels
+    "table.mostRaces.title",
+    "table.mostPoints.title",
+    "table.top5.title",
+    "table.top5.0_16.title",
+    "table.top10.title",
+    "table.top10.0_20.title",
+    "table.top10.21_34.title",
+    "table.top10.35_99.title",
+    "table.top10.60_99.title",
+    "table.championship.title",
+    "label.count",
+    "label.points",
+    "text.noData",
   ]);
 
   const { data: years = [] } = useYears(CLUB_ID);
@@ -349,64 +365,84 @@ export default function Index461() {
       {/* Tables */}
       <section className="grid md:grid-cols-2 gap-4">
         <StatsTable
-          title="Flest tävlingar"
-          valueLabel="Antal"
+          title={t(texts, "table.mostRaces.title", "Flest tävlingar")}
+          valueLabel={t(texts, "label.count", "Antal")}
+          noDataText={t(texts, "text.noData", "Ingen data finns")}
           rows={rowsMostRaces}
-          onOpenDrilldown={(row) => openDrill("Flest tävlingar", row)}
+          onOpenDrilldown={(row) => openDrill(t(texts, "table.mostRaces.title", "Flest tävlingar"), row)}
         />
         <StatsTable
-          title="Flest poäng"
-          valueLabel="Poäng"
+          title={t(texts, "table.mostPoints.title", "Flest poäng")}
+          valueLabel={t(texts, "label.points", "Poäng")}
+          noDataText={t(texts, "text.noData", "Ingen data finns")}
           rows={rowsMostPointsAll}
-          onOpenDrilldown={(row) => openDrill("Flest poäng", row)}
+          onOpenDrilldown={(row) => openDrill(t(texts, "table.mostPoints.title", "Flest poäng"), row)}
         />
         <StatsTable
-          title="Flest poäng 5 bästa tävlingarna"
-          valueLabel="Poäng"
+          title={t(texts, "table.top5.title", "Flest poäng 5 bästa tävlingarna")}
+          valueLabel={t(texts, "label.points", "Poäng")}
+          noDataText={t(texts, "text.noData", "Ingen data finns")}
           rows={rowsTop5}
-          onOpenDrilldown={(row) => openDrill("Flest poäng 5 bästa tävlingarna", row)}
+          onOpenDrilldown={(row) => openDrill(t(texts, "table.top5.title", "Flest poäng 5 bästa tävlingarna"), row)}
         />
         <StatsTable
-          title="Flest poäng 5 bästa tävlingarna 0–16 år"
-          valueLabel="Poäng"
+          title={t(texts, "table.top5.0_16.title", "Flest poäng 5 bästa tävlingarna 0–16 år")}
+          valueLabel={t(texts, "label.points", "Poäng")}
+          noDataText={t(texts, "text.noData", "Ingen data finns")}
           rows={rowsTop5_0_16}
-          onOpenDrilldown={(row) => openDrill("Flest poäng 5 bästa tävlingarna 0–16 år", row)}
+          onOpenDrilldown={(row) =>
+            openDrill(t(texts, "table.top5.0_16.title", "Flest poäng 5 bästa tävlingarna 0–16 år"), row)
+          }
         />
         <StatsTable
-          title="Flest poäng 10 bästa tävlingarna"
-          valueLabel="Poäng"
+          title={t(texts, "table.top10.title", "Flest poäng 10 bästa tävlingarna")}
+          valueLabel={t(texts, "label.points", "Poäng")}
+          noDataText={t(texts, "text.noData", "Ingen data finns")}
           rows={rowsTop10}
-          onOpenDrilldown={(row) => openDrill("Flest poäng 10 bästa tävlingarna", row)}
+          onOpenDrilldown={(row) => openDrill(t(texts, "table.top10.title", "Flest poäng 10 bästa tävlingarna"), row)}
         />
         <StatsTable
-          title="Flest poäng 10 bästa tävlingarna 0–20 år"
-          valueLabel="Poäng"
+          title={t(texts, "table.top10.0_20.title", "Flest poäng 10 bästa tävlingarna 0–20 år")}
+          valueLabel={t(texts, "label.points", "Poäng")}
+          noDataText={t(texts, "text.noData", "Ingen data finns")}
           rows={rowsTop10_0_20}
-          onOpenDrilldown={(row) => openDrill("Flest poäng 10 bästa tävlingarna 0–20 år", row)}
+          onOpenDrilldown={(row) =>
+            openDrill(t(texts, "table.top10.0_20.title", "Flest poäng 10 bästa tävlingarna 0–20 år"), row)
+          }
         />
         <StatsTable
-          title="Flest poäng 10 bästa tävlingarna 21–34 år"
-          valueLabel="Poäng"
+          title={t(texts, "table.top10.21_34.title", "Flest poäng 10 bästa tävlingarna 21–34 år")}
+          valueLabel={t(texts, "label.points", "Poäng")}
+          noDataText={t(texts, "text.noData", "Ingen data finns")}
           rows={rowsTop10_21_34}
-          onOpenDrilldown={(row) => openDrill("Flest poäng 10 bästa tävlingarna 21–34 år", row)}
+          onOpenDrilldown={(row) =>
+            openDrill(t(texts, "table.top10.21_34.title", "Flest poäng 10 bästa tävlingarna 21–34 år"), row)
+          }
         />
         <StatsTable
-          title="Flest poäng 10 bästa tävlingarna 35–99 år"
-          valueLabel="Poäng"
+          title={t(texts, "table.top10.35_99.title", "Flest poäng 10 bästa tävlingarna 35–99 år")}
+          valueLabel={t(texts, "label.points", "Poäng")}
+          noDataText={t(texts, "text.noData", "Ingen data finns")}
           rows={rowsTop10_35_99}
-          onOpenDrilldown={(row) => openDrill("Flest poäng 10 bästa tävlingarna 35–99 år", row)}
+          onOpenDrilldown={(row) =>
+            openDrill(t(texts, "table.top10.35_99.title", "Flest poäng 10 bästa tävlingarna 35–99 år"), row)
+          }
         />
         <StatsTable
-          title="Flest poäng 10 bästa tävlingarna 60–99 år"
-          valueLabel="Poäng"
+          title={t(texts, "table.top10.60_99.title", "Flest poäng 10 bästa tävlingarna 60–99 år")}
+          valueLabel={t(texts, "label.points", "Poäng")}
+          noDataText={t(texts, "text.noData", "Ingen data finns")}
           rows={rowsTop10_60_99}
-          onOpenDrilldown={(row) => openDrill("Flest poäng 10 bästa tävlingarna 60–99 år", row)}
+          onOpenDrilldown={(row) =>
+            openDrill(t(texts, "table.top10.60_99.title", "Flest poäng 10 bästa tävlingarna 60–99 år"), row)
+          }
         />
         <StatsTable
-          title="Flest poäng Mästerskap"
-          valueLabel="Poäng"
+          title={t(texts, "table.championship.title", "Flest poäng Mästerskap")}
+          valueLabel={t(texts, "label.points", "Poäng")}
+          noDataText={t(texts, "text.noData", "Ingen data finns")}
           rows={rowsChampionship}
-          onOpenDrilldown={(row) => openDrill("Flest poäng Mästerskap", row)}
+          onOpenDrilldown={(row) => openDrill(t(texts, "table.championship.title", "Flest poäng Mästerskap"), row)}
         />
       </section>
 
@@ -541,6 +577,31 @@ export default function Index461() {
             </CardContent>
           </Card>
         </div>
+      </section>
+
+      {/* Warnings placeholder */}
+      <section className="space-y-3">
+        <Card>
+          <CardHeader>
+            <CardTitle>Varningar</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <p className="text-sm text-muted-foreground">
+              Kräver ny RPC från backend för att hämta varningar.
+            </p>
+            <Button
+              variant="secondary"
+              onClick={() =>
+                toast({
+                  title: "Varningskontroll",
+                  description: "Ej implementerat – exponera en RPC för varningar.",
+                })
+              }
+            >
+              Kör varningskontroll
+            </Button>
+          </CardContent>
+        </Card>
       </section>
     </main>
   );
