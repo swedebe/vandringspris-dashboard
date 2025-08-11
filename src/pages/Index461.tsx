@@ -1,0 +1,547 @@
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Helmet } from "react-helmet-async";
+import { supabase } from "@/integrations/supabase/client";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
+import { useAppTexts, t } from "@/hooks/useAppTexts";
+import { formatSecondsToHMS } from "@/lib/utils";
+
+const CLUB_ID = 461;
+
+type Result = {
+  eventraceid: number;
+  eventid: number;
+  eventdate: string;
+  eventname: string;
+  eventform: string | null;
+  eventdistance: string | null;
+  eventclassificationid: number | null;
+  personid: number;
+  personsex: string;
+  personnamegiven: string | null;
+  personnamefamily: string | null;
+  personage: number | null;
+  eventclassname: string | null;
+  classtypeid: number | null;
+  klassfaktor: number | null;
+  points: number | null;
+  resulttime: number | null;
+  resulttimediff: number | null;
+  resultposition: number | null;
+  classresultnumberofstarts: number | null;
+  resultcompetitorstatus: string | null;
+  relayteamname: string | null;
+  relayleg: number | null;
+  relaylegoverallposition: number | null;
+  relayteamendposition: number | null;
+  relayteamenddiff: number | null;
+  clubparticipation: number | null;
+};
+
+function useYears(clubId: number) {
+  return useQuery<number[]>({
+    queryKey: ["years", clubId],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("rpc_years_for_club", { _club: clubId });
+      if (error) throw error;
+      return (data ?? []).map((r: any) => r.year as number);
+    },
+  });
+}
+
+function useClubName(clubId: number) {
+  return useQuery<string>({
+    queryKey: ["clubname", clubId],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("rpc_club_name", { _club: clubId });
+      if (error) throw error;
+      const row = (data ?? [])[0];
+      return (row?.clubname as string) ?? "";
+    },
+  });
+}
+
+function useResults(params: {
+  club: number | null;
+  year: number | null;
+  gender: string | null; // "Alla" | "Damer" | "Herrar" | "F" | "M" | null
+  onlyChampionship?: boolean | null;
+  ageMin?: number | null;
+  ageMax?: number | null;
+}) {
+  const { club, year, gender, onlyChampionship = null, ageMin = null, ageMax = null } = params;
+  return useQuery<Result[]>({
+    queryKey: ["results", club, year, gender, onlyChampionship, ageMin, ageMax],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("rpc_results_enriched", {
+        _club: club,
+        _year: year,
+        _gender: gender,
+        _only_championship: onlyChampionship,
+        _age_min: ageMin,
+        _age_max: ageMax,
+        _personid: null,
+        _limit: 500,
+        _offset: 0,
+      });
+      if (error) throw error;
+      return (data ?? []) as Result[];
+    },
+  });
+}
+
+function groupByPerson(results: Result[]) {
+  const map = new Map<number, { name: string; items: Result[] }>();
+  for (const r of results) {
+    const name = `${r.personnamegiven ?? ""} ${r.personnamefamily ?? ""}`.trim();
+    if (!map.has(r.personid)) map.set(r.personid, { name, items: [] });
+    map.get(r.personid)!.items.push(r);
+  }
+  return map;
+}
+
+function sumTopN(points: (number | null)[], n: number) {
+  return points
+    .filter((p): p is number => typeof p === "number")
+    .sort((a, b) => b - a)
+    .slice(0, n)
+    .reduce((a, b) => a + b, 0);
+}
+
+function StatsTable({
+  title,
+  rows,
+  valueLabel,
+  onOpenDrilldown,
+}: {
+  title: string;
+  rows: { personid: number; name: string; value: number; usedItems?: Result[] }[];
+  valueLabel: string;
+  onOpenDrilldown: (row: { personid: number; name: string; usedItems?: Result[] }) => void;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {rows.length === 0 ? (
+          <div className="text-sm text-muted-foreground">Ingen data finns</div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Namn</TableHead>
+                <TableHead className="text-right">{valueLabel}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((r) => (
+                <TableRow key={r.personid}>
+                  <TableCell className="font-medium">{r.name}</TableCell>
+                  <TableCell className="text-right">
+                    <button
+                      className="underline text-primary"
+                      onClick={() => onOpenDrilldown(r)}
+                    >
+                      {r.value.toFixed(valueLabel === "Antal" ? 0 : 2)}
+                    </button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+export default function Index461() {
+  const { toast } = useToast();
+  const { data: texts } = useAppTexts("index461", [
+    "title.vandringspris",
+    "intro",
+    "filters.year",
+    "filters.gender",
+    "gender.all",
+    "gender.female",
+    "gender.male",
+    "button.update",
+    "button.updatePersons",
+    "button.updateEvents",
+    "button.updateResults",
+  ]);
+
+  const { data: years = [] } = useYears(CLUB_ID);
+  const currentUTCYear = new Date().getUTCFullYear();
+  const defaultYear = years.includes(currentUTCYear) ? currentUTCYear : years[0];
+
+  const [year, setYear] = useState<number | undefined>(defaultYear);
+  const [gender, setGender] = useState<string>("Alla");
+
+  const { data: clubName = "" } = useClubName(CLUB_ID);
+
+  // Base filtered results for common filters
+  const { data: baseResults = [], isLoading } = useResults({
+    club: CLUB_ID,
+    year: year ?? null,
+    gender: gender,
+  });
+
+  // Derived datasets for each table
+  const rowsMostRaces = useMemo(() => {
+    const groups = groupByPerson(baseResults);
+    const rows = Array.from(groups.entries()).map(([personid, { name, items }]) => ({
+      personid,
+      name,
+      value: items.length,
+      usedItems: items,
+    }));
+    return rows.sort((a, b) => b.value - a.value);
+  }, [baseResults]);
+
+  const makeTopPointsRows = (n: number, ageMin: number | null, ageMax: number | null, onlyChampionship?: boolean) => {
+    const filtered = baseResults.filter((r) => {
+      if (onlyChampionship && r.eventclassificationid !== 1) return false;
+      if (ageMin !== null && (r.personage ?? 0) < ageMin) return false;
+      if (ageMax !== null && (r.personage ?? 0) > ageMax) return false;
+      return true;
+    });
+    const groups = groupByPerson(filtered);
+    const rows = Array.from(groups.entries()).map(([personid, { name, items }]) => {
+      // top-N by points per person
+      const topItems = items
+        .filter((i) => typeof i.points === "number")
+        .sort((a, b) => (b.points ?? 0) - (a.points ?? 0))
+        .slice(0, n);
+      const value = topItems.reduce((sum, i) => sum + (i.points ?? 0), 0);
+      return { personid, name, value, usedItems: topItems };
+    });
+    return rows.sort((a, b) => b.value - a.value);
+  };
+
+  const rowsMostPointsAll = useMemo(() => {
+    const groups = groupByPerson(baseResults);
+    const rows = Array.from(groups.entries()).map(([personid, { name, items }]) => ({
+      personid,
+      name,
+      value: items.reduce((sum, i) => sum + (i.points ?? 0), 0),
+      usedItems: items,
+    }));
+    return rows.sort((a, b) => b.value - a.value);
+  }, [baseResults]);
+
+  const rowsTop5 = useMemo(() => makeTopPointsRows(5, null, null), [baseResults]);
+  const rowsTop5_0_16 = useMemo(() => makeTopPointsRows(5, 0, 16), [baseResults]);
+  const rowsTop10 = useMemo(() => makeTopPointsRows(10, null, null), [baseResults]);
+  const rowsTop10_0_20 = useMemo(() => makeTopPointsRows(10, 0, 20), [baseResults]);
+  const rowsTop10_21_34 = useMemo(() => makeTopPointsRows(10, 21, 34), [baseResults]);
+  const rowsTop10_35_99 = useMemo(() => makeTopPointsRows(10, 35, 99), [baseResults]);
+  const rowsTop10_60_99 = useMemo(() => makeTopPointsRows(10, 60, 99), [baseResults]);
+  const rowsChampionship = useMemo(() => makeTopPointsRows(9999, null, null, true), [baseResults]);
+
+  // Drilldown state
+  const [drillOpen, setDrillOpen] = useState(false);
+  const [drillTitle, setDrillTitle] = useState("");
+  const [drillItems, setDrillItems] = useState<Result[]>([]);
+
+  const openDrill = (title: string, row: { name: string; usedItems?: Result[] }) => {
+    setDrillTitle(`${title} – ${row.name}`);
+    setDrillItems(row.usedItems ?? []);
+    setDrillOpen(true);
+  };
+
+  async function callProxy(path: string) {
+    const base = import.meta.env.VITE_PROXY_BASE_URL as string;
+    const res = await fetch(`${base}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    if (!res.ok) throw new Error(`Proxy error ${res.status}`);
+    return await res.json().catch(() => ({}));
+  }
+
+  const handleProxy = async (path: string, label: string) => {
+    try {
+      await callProxy(path);
+      toast({ title: `${label} klar` });
+    } catch (e: any) {
+      toast({ title: `${label} misslyckades`, description: e.message, variant: "destructive" });
+    }
+  };
+
+  // Logs
+  const { data: apiLogs = [], refetch: refetchLogs } = useQuery({
+    queryKey: ["apiLogs"],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("rpc_logdata_recent", { _limit: 100 });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+  const { data: batches = [], refetch: refetchBatches } = useQuery({
+    queryKey: ["batchRuns"],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("rpc_batchrun_recent", { _limit: 100 });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  const refreshLogs = () => {
+    refetchLogs();
+    refetchBatches();
+  };
+
+  return (
+    <main className="container mx-auto p-4 space-y-6">
+      <Helmet>
+        <title>{`${t(texts, "title.vandringspris", "Vandringspris")} ${clubName}`}</title>
+        <meta name="description" content={`Vandringspris och statistik för ${clubName}`} />
+        <link rel="canonical" href="/index461" />
+      </Helmet>
+
+      <header className="space-y-2">
+        <h1 className="text-3xl font-semibold">
+          {t(texts, "title.vandringspris", "Vandringspris")} {clubName}
+        </h1>
+        <p className="text-muted-foreground">{t(texts, "intro", "Förklarande textmassa...")}</p>
+      </header>
+
+      {/* Filters */}
+      <section className="flex flex-wrap gap-4 items-center">
+        <div className="w-48">
+          <label className="block text-sm mb-1">{t(texts, "filters.year", "Årtal")}</label>
+          <Select value={String(year ?? "")} onValueChange={(v) => setYear(v ? Number(v) : undefined)}>
+            <SelectTrigger>
+              <SelectValue placeholder="Välj år" />
+            </SelectTrigger>
+            <SelectContent>
+              {years.map((y) => (
+                <SelectItem key={y} value={String(y)}>
+                  {y}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="w-48">
+          <label className="block text-sm mb-1">{t(texts, "filters.gender", "Kön")}</label>
+          <Select value={gender} onValueChange={(v) => setGender(v)}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Alla">{t(texts, "gender.all", "Alla")}</SelectItem>
+              <SelectItem value="Damer">{t(texts, "gender.female", "Damer")}</SelectItem>
+              <SelectItem value="Herrar">{t(texts, "gender.male", "Herrar")}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </section>
+
+      {/* Tables */}
+      <section className="grid md:grid-cols-2 gap-4">
+        <StatsTable
+          title="Flest tävlingar"
+          valueLabel="Antal"
+          rows={rowsMostRaces}
+          onOpenDrilldown={(row) => openDrill("Flest tävlingar", row)}
+        />
+        <StatsTable
+          title="Flest poäng"
+          valueLabel="Poäng"
+          rows={rowsMostPointsAll}
+          onOpenDrilldown={(row) => openDrill("Flest poäng", row)}
+        />
+        <StatsTable
+          title="Flest poäng 5 bästa tävlingarna"
+          valueLabel="Poäng"
+          rows={rowsTop5}
+          onOpenDrilldown={(row) => openDrill("Flest poäng 5 bästa tävlingarna", row)}
+        />
+        <StatsTable
+          title="Flest poäng 5 bästa tävlingarna 0–16 år"
+          valueLabel="Poäng"
+          rows={rowsTop5_0_16}
+          onOpenDrilldown={(row) => openDrill("Flest poäng 5 bästa tävlingarna 0–16 år", row)}
+        />
+        <StatsTable
+          title="Flest poäng 10 bästa tävlingarna"
+          valueLabel="Poäng"
+          rows={rowsTop10}
+          onOpenDrilldown={(row) => openDrill("Flest poäng 10 bästa tävlingarna", row)}
+        />
+        <StatsTable
+          title="Flest poäng 10 bästa tävlingarna 0–20 år"
+          valueLabel="Poäng"
+          rows={rowsTop10_0_20}
+          onOpenDrilldown={(row) => openDrill("Flest poäng 10 bästa tävlingarna 0–20 år", row)}
+        />
+        <StatsTable
+          title="Flest poäng 10 bästa tävlingarna 21–34 år"
+          valueLabel="Poäng"
+          rows={rowsTop10_21_34}
+          onOpenDrilldown={(row) => openDrill("Flest poäng 10 bästa tävlingarna 21–34 år", row)}
+        />
+        <StatsTable
+          title="Flest poäng 10 bästa tävlingarna 35–99 år"
+          valueLabel="Poäng"
+          rows={rowsTop10_35_99}
+          onOpenDrilldown={(row) => openDrill("Flest poäng 10 bästa tävlingarna 35–99 år", row)}
+        />
+        <StatsTable
+          title="Flest poäng 10 bästa tävlingarna 60–99 år"
+          valueLabel="Poäng"
+          rows={rowsTop10_60_99}
+          onOpenDrilldown={(row) => openDrill("Flest poäng 10 bästa tävlingarna 60–99 år", row)}
+        />
+        <StatsTable
+          title="Flest poäng Mästerskap"
+          valueLabel="Poäng"
+          rows={rowsChampionship}
+          onOpenDrilldown={(row) => openDrill("Flest poäng Mästerskap", row)}
+        />
+      </section>
+
+      {/* Drilldown */}
+      <Dialog open={drillOpen} onOpenChange={setDrillOpen}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>{drillTitle}</DialogTitle>
+          </DialogHeader>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Tävlingsdatum</TableHead>
+                  <TableHead>Tävlingsnamn</TableHead>
+                  <TableHead>Tävlingsform</TableHead>
+                  <TableHead>Klass</TableHead>
+                  <TableHead>Klasstyp</TableHead>
+                  <TableHead>Klassfaktor</TableHead>
+                  <TableHead>Poäng</TableHead>
+                  <TableHead>Tid</TableHead>
+                  <TableHead>Tid efter</TableHead>
+                  <TableHead>Placering</TableHead>
+                  <TableHead>Antal startande</TableHead>
+                  <TableHead>Resultatstatus</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {drillItems.map((r) => (
+                  <TableRow key={`${r.eventraceid}-${r.personid}`}>
+                    <TableCell>{new Date(r.eventdate).toISOString().slice(0, 10)}</TableCell>
+                    <TableCell>{r.eventname}</TableCell>
+                    <TableCell>{r.eventform ?? ""}</TableCell>
+                    <TableCell>{r.eventclassname ?? ""}</TableCell>
+                    <TableCell>{r.classtypeid ?? ""}</TableCell>
+                    <TableCell>{r.klassfaktor ?? ""}</TableCell>
+                    <TableCell>{typeof r.points === "number" ? r.points.toFixed(2) : ""}</TableCell>
+                    <TableCell>{r.resulttime != null ? formatSecondsToHMS(r.resulttime) : ""}</TableCell>
+                    <TableCell>{r.resulttimediff != null ? formatSecondsToHMS(r.resulttimediff) : ""}</TableCell>
+                    <TableCell>{r.resultposition ?? ""}</TableCell>
+                    <TableCell>{r.classresultnumberofstarts ?? ""}</TableCell>
+                    <TableCell>{r.resultcompetitorstatus ?? ""}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dev logs and manual triggers */}
+      <section className="space-y-3">
+        <div className="flex gap-2">
+          <Button onClick={() => handleProxy("/api/update-persons", "Uppdatera personer")}>
+            {t(texts, "button.updatePersons", "Uppdatera personer")}
+          </Button>
+          <Button onClick={() => handleProxy("/api/update-events", "Uppdatera tävlingar")}>
+            {t(texts, "button.updateEvents", "Uppdatera tävlingar")}
+          </Button>
+          <Button onClick={() => handleProxy("/api/update-results", "Uppdatera resultat")}>
+            {t(texts, "button.updateResults", "Uppdatera resultat")}
+          </Button>
+          <Button variant="secondary" onClick={refreshLogs}>
+            {t(texts, "button.update", "Uppdatera")}
+          </Button>
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>API-anrop mot Eventor (senaste 100)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="max-h-80 overflow-auto text-sm">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>URL</TableHead>
+                      <TableHead>Start</TableHead>
+                      <TableHead>Slut</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Fel</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {apiLogs.map((l: any, idx: number) => (
+                      <TableRow key={idx}>
+                        <TableCell className="break-all">{l.request}</TableCell>
+                        <TableCell>{l.started}</TableCell>
+                        <TableCell>{l.completed}</TableCell>
+                        <TableCell>{l.responsecode}</TableCell>
+                        <TableCell>{l.errormessage}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Batchkörningar (senaste 100)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="max-h-80 overflow-auto text-sm">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Typ</TableHead>
+                      <TableHead>Start</TableHead>
+                      <TableHead>Slut</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Kommentar</TableHead>
+                      <TableHead>Antal rader</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {batches.map((b: any) => (
+                      <TableRow key={b.id}>
+                        <TableCell>{b.appversion}</TableCell>
+                        <TableCell>{b.starttime}</TableCell>
+                        <TableCell>{b.endtime}</TableCell>
+                        <TableCell>{b.status}</TableCell>
+                        <TableCell>{b.comment}</TableCell>
+                        <TableCell>{b.numberofrowsafter}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+    </main>
+  );
+}
