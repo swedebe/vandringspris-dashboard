@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { useToast } from "@/hooks/use-toast";
 import { useAppTexts, t } from "@/hooks/useAppTexts";
 import { formatSecondsToHMS } from "@/lib/utils";
-
+import { hasSupabaseConfig, getProxyBaseUrl } from "@/lib/config";
 const CLUB_ID = 461;
 
 type Result = {
