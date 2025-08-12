@@ -2,6 +2,7 @@ import { Helmet } from "react-helmet-async";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { supabaseAdmin } from "@/integrations/supabase/admin";
 import { hasSupabaseConfig } from "@/lib/config";
 import { useAppTexts, t } from "@/hooks/useAppTexts";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -88,9 +89,11 @@ const Warnings = () => {
     const entries = Object.entries(modified);
     if (entries.length === 0) return;
 
+    const client = supabaseAdmin ?? supabase;
+
     const results = await Promise.allSettled(
       entries.map(([id, hideVal]) =>
-        supabase
+        client
           .from("warnings")
           .update({ hide: hideVal })
           .eq("id", id)
