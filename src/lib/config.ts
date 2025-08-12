@@ -30,31 +30,32 @@ export function getSupabaseConfig(): {
 } {
   const envUrl = readEnv("VITE_SUPABASE_URL");
   const envKey = readEnv("VITE_SUPABASE_ANON_KEY");
-  const lsUrl = typeof localStorage !== "undefined" ? localStorage.getItem(LS_KEYS.supabaseUrl) ?? undefined : undefined;
-  const lsKey = typeof localStorage !== "undefined" ? localStorage.getItem(LS_KEYS.supabaseAnonKey) ?? undefined : undefined;
   const rtUrl = readRuntime("SUPABASE_URL");
   const rtKey = readRuntime("SUPABASE_ANON_KEY");
+  const lsUrl = typeof localStorage !== "undefined" ? localStorage.getItem(LS_KEYS.supabaseUrl) ?? undefined : undefined;
+  const lsKey = typeof localStorage !== "undefined" ? localStorage.getItem(LS_KEYS.supabaseAnonKey) ?? undefined : undefined;
 
+  // Priority: VITE > runtime-config.json > localStorage
   if (envUrl && envKey) return { url: envUrl, anonKey: envKey, source: "VITE" };
-  if (lsUrl && lsKey) return { url: lsUrl, anonKey: lsKey, source: "localStorage" };
   if (rtUrl && rtKey) return { url: rtUrl, anonKey: rtKey, source: "runtime" };
+  if (lsUrl && lsKey) return { url: lsUrl, anonKey: lsKey, source: "localStorage" };
 
-  // Partial availability: prefer complete LS, then runtime over partial ENV
+  // Partial availability: prefer runtime values over localStorage when mixing
   if (!envUrl || !envKey) {
-    if (lsUrl && lsKey) return { url: lsUrl, anonKey: lsKey, source: "localStorage" };
     if (rtUrl && rtKey) return { url: rtUrl, anonKey: rtKey, source: "runtime" };
+    if (lsUrl && lsKey) return { url: lsUrl, anonKey: lsKey, source: "localStorage" };
   }
 
-  return { url: envUrl || lsUrl || rtUrl, anonKey: envKey || lsKey || rtKey, source: "missing" };
+  return { url: envUrl || rtUrl || lsUrl, anonKey: envKey || rtKey || lsKey, source: "missing" };
 }
 
 export function getProxyBaseUrl(): { url?: string; source: ConfigSource } {
   const envProxy = readEnv("VITE_PROXY_BASE_URL");
-  const lsProxy = typeof localStorage !== "undefined" ? localStorage.getItem(LS_KEYS.proxyBaseUrl) ?? undefined : undefined;
   const rtProxy = readRuntime("PROXY_BASE_URL");
+  const lsProxy = typeof localStorage !== "undefined" ? localStorage.getItem(LS_KEYS.proxyBaseUrl) ?? undefined : undefined;
   if (envProxy) return { url: envProxy, source: "VITE" };
-  if (lsProxy) return { url: lsProxy, source: "localStorage" };
   if (rtProxy) return { url: rtProxy, source: "runtime" };
+  if (lsProxy) return { url: lsProxy, source: "localStorage" };
   return { url: undefined, source: "missing" };
 }
 
