@@ -10,6 +10,7 @@ import Index461 from "./pages/Index461";
 import ResultsStatistics from "./pages/ResultsStatistics";
 import Setup from "./pages/Setup";
 import ConfigBanner from "./components/ConfigBanner";
+import Warnings from "./pages/Warnings";
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -20,14 +21,15 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <ConfigBanner />
-          <Routes>
-            <Route path="/" element={<Index />} />
-            <Route path="/index461" element={<Index461 />} />
-            <Route path="/results-statistics" element={<ResultsStatistics />} />
-            <Route path="/setup" element={<Setup />} />
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+            <Routes>
+              <Route path="/" element={<Index />} />
+              <Route path="/index461" element={<Index461 />} />
+              <Route path="/results-statistics" element={<ResultsStatistics />} />
+              <Route path="/warnings" element={<Warnings />} />
+              <Route path="/setup" element={<Setup />} />
+              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
         </BrowserRouter>
       </HelmetProvider>
     </TooltipProvider>

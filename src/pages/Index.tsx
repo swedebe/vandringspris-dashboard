@@ -7,6 +7,7 @@ const Index = () => {
     "title.home",
     "link.club461",
     "link.results",
+    "link.warnings",
     "intro.home",
   ]);
 
@@ -26,6 +27,9 @@ const Index = () => {
           </Link>
           <Link className="underline text-primary" to="/results-statistics">
             {t(texts, "link.results", "Resultatstatistik")}
+          </Link>
+          <Link className="underline text-primary" to="/warnings">
+            {t(texts, "link.warnings", "Varningar")}
           </Link>
         </div>
       </nav>
