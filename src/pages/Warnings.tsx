@@ -12,7 +12,7 @@ import { Link } from "react-router-dom";
 
 interface WarningRow {
   id: string;
-  hide: number;
+  hide: number | null;
   created: string | null;
   organisationid: number | null;
   eventid: number | null;
@@ -26,7 +26,7 @@ interface WarningRow {
 const Warnings = () => {
   const { toast } = useToast();
   const [includeHidden, setIncludeHidden] = useState(false);
-  const [modified, setModified] = useState<Record<string, 0 | 1>>({});
+  const [modified, setModified] = useState<Record<string, 1 | null>>({});
   const configReady = hasSupabaseConfig();
 
   const { data: texts } = useAppTexts("warnings", [
@@ -51,7 +51,7 @@ const Warnings = () => {
         .order("created", { ascending: false });
 
       if (!includeHidden) {
-        q = q.eq("hide", 0);
+        q = q.or("hide.is.null, hide.eq.0");
       }
 
       const { data, error } = await q;
@@ -62,19 +62,19 @@ const Warnings = () => {
 
   const rows = query.data ?? [];
 
-  const currentHide = (row: WarningRow): number => {
+  const currentHide = (row: WarningRow): 1 | null => {
     const v = modified[row.id];
     if (v !== undefined) return v;
-    return row.hide && row.hide !== 0 ? 1 : 0;
+    return row.hide === 1 ? 1 : null;
   };
 
   const dirtyCount = useMemo(() => Object.keys(modified).length, [modified]);
 
   const onToggleRow = (row: WarningRow, checked: boolean) => {
-    const next: 0 | 1 = checked ? 1 : 0;
-    const initial: 0 | 1 = row.hide && row.hide !== 0 ? 1 : 0;
+    const next: 1 | null = checked ? 1 : null;
+    const initial: 1 | null = row.hide === 1 ? 1 : null;
     setModified((prev) => {
-      const copy = { ...prev } as Record<string, 0 | 1>;
+      const copy = { ...prev };
       if (next === initial) {
         delete copy[row.id];
       } else {
