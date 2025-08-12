@@ -160,6 +160,12 @@ const Warnings = () => {
 
         {!query.isLoading && !query.isError && rows.length > 0 && (
           <div className="space-y-4">
+            <div className="flex items-center justify-end">
+              <Button onClick={saveChanges} disabled={dirtyCount === 0 || query.isLoading || !configReady}>
+                {t(texts, "page.warnings.save", "Save changes")} {dirtyCount > 0 ? `(${dirtyCount})` : ""}
+              </Button>
+            </div>
+
             <div className="rounded-md border">
               <Table>
                 <TableHeader>
@@ -189,7 +195,7 @@ const Warnings = () => {
                       <TableCell>{row.organisationid ?? ""}</TableCell>
                       <TableCell>{row.eventid ?? ""}</TableCell>
                       <TableCell>{row.eventraceid ?? ""}</TableCell>
-                      <TableCell className="max-w-[500px] truncate" title={row.message ?? undefined}>{row.message ?? ""}</TableCell>
+                      <TableCell className="max-w-[500px] whitespace-normal break-words" title={row.message ?? undefined}>{row.message ?? ""}</TableCell>
                       <TableCell>{row.personid ?? ""}</TableCell>
                       <TableCell>{row.clubparticipation ?? ""}</TableCell>
                       <TableCell className="max-w-[360px] truncate" title={row.batchid ?? undefined}>{row.batchid ?? ""}</TableCell>
@@ -197,12 +203,6 @@ const Warnings = () => {
                   ))}
                 </TableBody>
               </Table>
-            </div>
-
-            <div className="flex items-center justify-end">
-              <Button onClick={saveChanges} disabled={dirtyCount === 0 || query.isLoading || !configReady}>
-                {t(texts, "page.warnings.save", "Save changes")} {dirtyCount > 0 ? `(${dirtyCount})` : ""}
-              </Button>
             </div>
           </div>
         )}
