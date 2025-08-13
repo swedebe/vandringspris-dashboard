@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Helmet } from "react-helmet-async";
 import { supabase } from "@/integrations/supabase/client";
@@ -120,8 +120,15 @@ function useResults(params: {
             )
           `)
           .eq('clubparticipation', club)
-          .eq('events.disciplineid', disciplineId)
           .not('persons.personsex', 'is', null);
+
+        // Discipline filter
+        if (disciplineId === 1) {
+          // Treat missing discipline as Fot-OL to avoid empty tables when data is incomplete
+          query = query.or(`events.disciplineid.eq.1,events.disciplineid.is.null`);
+        } else {
+          query = query.eq('events.disciplineid', disciplineId);
+        }
 
         // Apply YEAR filter (on events.eventdate)
         if (year !== null) {
@@ -314,9 +321,17 @@ export default function Index461() {
 
   const { data: years = [] } = useYears(CLUB_ID);
   const currentUTCYear = new Date().getUTCFullYear();
-  const defaultYear = years.includes(currentUTCYear) ? currentUTCYear : years[0];
+  const [year, setYear] = useState<number | undefined>(undefined);
 
-  const [year, setYear] = useState<number | undefined>(defaultYear);
+  // Ensure default becomes the highest available year when data arrives.
+  useEffect(() => {
+    if (years.length) {
+      const maxYear = Math.max(...years);
+      if (year === undefined || !years.includes(year)) {
+        setYear(maxYear);
+      }
+    }
+  }, [years]);
   const [gender, setGender] = useState<string>("Alla");
   const [disciplineId, setDisciplineId] = useState<number | null>(1); // Default to Fot-OL
 
@@ -413,28 +428,6 @@ export default function Index461() {
     }
   };
 
-  // Logs
-  const { data: apiLogs = [], refetch: refetchLogs } = useQuery({
-    queryKey: ["apiLogs"],
-    queryFn: async () => {
-      const { data, error } = await supabase.rpc("rpc_logdata_recent", { _limit: 100 });
-      if (error) throw error;
-      return data ?? [];
-    },
-  });
-  const { data: batches = [], refetch: refetchBatches } = useQuery({
-    queryKey: ["batchRuns"],
-    queryFn: async () => {
-      const { data, error } = await supabase.rpc("rpc_batchrun_recent", { _limit: 100 });
-      if (error) throw error;
-      return data ?? [];
-    },
-  });
-
-  const refreshLogs = () => {
-    refetchLogs();
-    refetchBatches();
-  };
 
   return (
     <main className="container mx-auto p-4 space-y-6">
@@ -483,18 +476,19 @@ export default function Index461() {
         </div>
         <div className="w-48">
           <label className="block text-sm mb-1">{t(texts, "filters.discipline", "Disciplin")}</label>
-          <Select value={disciplineId === null ? "ALL" : String(disciplineId)} onValueChange={(v) => setDisciplineId(v === "ALL" ? null : Number(v))}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
+          <Select
+            value={disciplineId === null ? "ALL" : String(disciplineId)}
+            onValueChange={(v) => setDisciplineId(v === "ALL" ? null : Number(v))}
+          >
+            <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="1">{t(texts, "discipline.1", "Fot-OL")}</SelectItem>
-              <SelectItem value="2">{t(texts, "discipline.2", "MTBO")}</SelectItem>
-              <SelectItem value="3">{t(texts, "discipline.3", "SkidO")}</SelectItem>
-              <SelectItem value="4">{t(texts, "discipline.4", "Pre-O")}</SelectItem>
-              <SelectItem value="7">{t(texts, "discipline.7", "OL-skytte")}</SelectItem>
-              <SelectItem value="8">{t(texts, "discipline.8", "Indoor")}</SelectItem>
-              <SelectItem value="ALL">{t(texts, "discipline.all", "Alla")}</SelectItem>
+              <SelectItem value="1">Fot-OL</SelectItem>
+              <SelectItem value="2">MTBO</SelectItem>
+              <SelectItem value="3">SkidO</SelectItem>
+              <SelectItem value="4">Pre-O</SelectItem>
+              <SelectItem value="7">OL-skytte</SelectItem>
+              <SelectItem value="8">Indoor</SelectItem>
+              <SelectItem value="ALL">Alla</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -631,12 +625,6 @@ export default function Index461() {
         </DialogContent>
       </Dialog>
 
-      {/* Dev logs */}
-      <section className="space-y-3">
-        <Button variant="secondary" onClick={refreshLogs}>
-          {t(texts, "button.update", "Uppdatera")}
-        </Button>
-      </section>
     </main>
   );
 }
