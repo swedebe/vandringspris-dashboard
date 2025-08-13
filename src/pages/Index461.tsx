@@ -95,37 +95,37 @@ function useResults(params: {
           .eq("clubparticipation", club)
           .not("persons.personsex", "is", null);
 
-        // Discipline on embedded events.*
+        // Discipline on embedded events (use foreignTable to avoid invalid URL)
         if (disciplineId === 1) {
-          // include NULL as Fot-OL legacy
-          query = query.or("events.disciplineid.eq.1,events.disciplineid.is.null");
+          // Fot-OL should also include NULL for legacy rows
+          query = query.or("disciplineid.eq.1,disciplineid.is.null", { foreignTable: "events" });
         } else {
-          query = query.eq("events.disciplineid", disciplineId);
+          query = query.eq("disciplineid", disciplineId, { foreignTable: "events" });
         }
 
         // Year (on events.eventdate)
         if (year !== null) {
           const start = `${year}-01-01`;
           const end = `${year}-12-31`;
-          query = query.gte("events.eventdate", start).lte("events.eventdate", end);
+          query = query
+            .gte("eventdate", start, { foreignTable: "events" })
+            .lte("eventdate", end, { foreignTable: "events" });
         }
 
         // Championship toggle (optional)
         if (onlyChampionship) {
-          query = query.eq("events.eventclassificationid", 1);
+          query = query.eq("eventclassificationid", 1, { foreignTable: "events" });
         }
 
         // Gender (on embedded persons.*)
         if (gender && gender !== "Alla") {
           const sex = gender === "Damer" || gender === "F" ? "F" : "M";
-          query = query.eq("persons.personsex", sex);
+          query = query.eq("personsex", sex, { foreignTable: "persons" });
         }
 
         const { data, error } = await query;
-        if (error) throw error;
-
-        // Debug: how many rows matched via inner-join path
-        console.debug("[DisciplineFilter:inner] rows:", (data ?? []).length);
+        if (error) console.error("[DisciplineFilter] error", error);
+        console.debug("[DisciplineFilter] rows", (data ?? []).length);
 
         let results = (data ?? []).map((row: any) => ({
           eventraceid: row.eventraceid,
