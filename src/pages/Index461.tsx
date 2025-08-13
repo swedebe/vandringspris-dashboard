@@ -71,27 +71,132 @@ function useResults(params: {
   club: number | null;
   year: number | null;
   gender: string | null; // "Alla" | "Damer" | "Herrar" | "F" | "M" | null
+  disciplineId?: number | null;
   onlyChampionship?: boolean | null;
   ageMin?: number | null;
   ageMax?: number | null;
 }) {
-  const { club, year, gender, onlyChampionship = null, ageMin = null, ageMax = null } = params;
+  const { club, year, gender, disciplineId = null, onlyChampionship = null, ageMin = null, ageMax = null } = params;
   return useQuery<Result[]>({
-    queryKey: ["results", club, year, gender, onlyChampionship, ageMin, ageMax],
+    queryKey: ["results", club, year, gender, disciplineId, onlyChampionship, ageMin, ageMax],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc("rpc_results_enriched", {
-        _club: club,
-        _year: year,
-        _gender: gender,
-        _only_championship: onlyChampionship,
-        _age_min: ageMin,
-        _age_max: ageMax,
-        _personid: null,
-        _limit: 500,
-        _offset: 0,
-      });
-      if (error) throw error;
-      return ((data ?? []) as Result[]).filter((r) => r.personsex != null);
+      // Since the RPC doesn't support disciplineId filtering, we need to get events data separately
+      if (disciplineId !== null) {
+        // Get results filtered by disciplineId using a direct query
+        const { data, error } = await supabase
+          .from('results')
+          .select(`
+            eventraceid,
+            eventid,
+            personid,
+            personage,
+            eventclassname,
+            classtypeid,
+            klassfaktor,
+            points,
+            resulttime,
+            resulttimediff,
+            resultposition,
+            classresultnumberofstarts,
+            resultcompetitorstatus,
+            relayteamname,
+            relayleg,
+            relaylegoverallposition,
+            relayteamendposition,
+            relayteamenddiff,
+            clubparticipation,
+            events!inner(
+              eventdate,
+              eventname,
+              eventform,
+              eventdistance,
+              eventclassificationid,
+              disciplineid
+            ),
+            persons!inner(
+              personsex,
+              personnamegiven,
+              personnamefamily
+            )
+          `)
+          .eq('clubparticipation', club)
+          .eq('events.disciplineid', disciplineId)
+          .not('persons.personsex', 'is', null);
+        
+        if (error) throw error;
+        
+        let results = (data ?? []).map((row: any) => ({
+          eventraceid: row.eventraceid,
+          eventid: row.eventid,
+          eventdate: row.events.eventdate,
+          eventname: row.events.eventname,
+          eventform: row.events.eventform,
+          eventdistance: row.events.eventdistance,
+          eventclassificationid: row.events.eventclassificationid,
+          personid: row.personid,
+          personsex: row.persons.personsex,
+          personnamegiven: row.persons.personnamegiven,
+          personnamefamily: row.persons.personnamefamily,
+          personage: row.personage,
+          eventclassname: row.eventclassname,
+          classtypeid: row.classtypeid,
+          klassfaktor: row.klassfaktor,
+          points: row.points,
+          resulttime: row.resulttime,
+          resulttimediff: row.resulttimediff,
+          resultposition: row.resultposition,
+          classresultnumberofstarts: row.classresultnumberofstarts,
+          resultcompetitorstatus: row.resultcompetitorstatus,
+          relayteamname: row.relayteamname,
+          relayleg: row.relayleg,
+          relaylegoverallposition: row.relaylegoverallposition,
+          relayteamendposition: row.relayteamendposition,
+          relayteamenddiff: row.relayteamenddiff,
+          clubparticipation: row.clubparticipation,
+        })) as Result[];
+
+        // Apply additional filters
+        if (year !== null) {
+          results = results.filter(r => new Date(r.eventdate).getFullYear() === year);
+        }
+        
+        if (gender && gender !== "Alla") {
+          const genderNorm = gender === "Damer" || gender === "F" ? "F" : 
+                           gender === "Herrar" || gender === "M" ? "M" : null;
+          if (genderNorm) {
+            results = results.filter(r => r.personsex === genderNorm);
+          }
+        }
+        
+        if (onlyChampionship) {
+          results = results.filter(r => r.eventclassificationid === 1);
+        }
+        
+        if (ageMin !== null) {
+          results = results.filter(r => (r.personage ?? 0) >= ageMin);
+        }
+        
+        if (ageMax !== null) {
+          results = results.filter(r => (r.personage ?? 0) <= ageMax);
+        }
+        
+        return results;
+      } else {
+        // Use the existing RPC function when no disciplineId filter
+        const { data, error } = await supabase.rpc("rpc_results_enriched", {
+          _club: club,
+          _year: year,
+          _gender: gender,
+          _only_championship: onlyChampionship,
+          _age_min: ageMin,
+          _age_max: ageMax,
+          _personid: null,
+          _limit: 500,
+          _offset: 0,
+        });
+        if (error) throw error;
+        return ((data ?? []) as Result[]).filter((r) => r.personsex != null);
+      }
     },
   });
 }
@@ -172,9 +277,16 @@ export default function Index461() {
     "intro",
     "filters.year",
     "filters.gender",
+    "filters.discipline",
     "gender.all",
     "gender.female",
     "gender.male",
+    "discipline.1",
+    "discipline.2",
+    "discipline.3",
+    "discipline.4",
+    "discipline.7",
+    "discipline.8",
     "button.update",
     "button.updatePersons",
     "button.updateEvents",
@@ -201,6 +313,7 @@ export default function Index461() {
 
   const [year, setYear] = useState<number | undefined>(defaultYear);
   const [gender, setGender] = useState<string>("Alla");
+  const [disciplineId, setDisciplineId] = useState<number>(1); // Default to Fot-OL
 
   const { data: clubName = "" } = useClubName(CLUB_ID);
 
@@ -209,6 +322,7 @@ export default function Index461() {
     club: CLUB_ID,
     year: year ?? null,
     gender: gender,
+    disciplineId: disciplineId,
   });
 
   // Derived datasets for each table
@@ -359,6 +473,22 @@ export default function Index461() {
               <SelectItem value="Alla">{t(texts, "gender.all", "Alla")}</SelectItem>
               <SelectItem value="Damer">{t(texts, "gender.female", "Damer")}</SelectItem>
               <SelectItem value="Herrar">{t(texts, "gender.male", "Herrar")}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="w-48">
+          <label className="block text-sm mb-1">{t(texts, "filters.discipline", "Disciplin")}</label>
+          <Select value={String(disciplineId)} onValueChange={(v) => setDisciplineId(Number(v))}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="1">{t(texts, "discipline.1", "Fot-OL")}</SelectItem>
+              <SelectItem value="2">{t(texts, "discipline.2", "MTBO")}</SelectItem>
+              <SelectItem value="3">{t(texts, "discipline.3", "SkidO")}</SelectItem>
+              <SelectItem value="4">{t(texts, "discipline.4", "Pre-O")}</SelectItem>
+              <SelectItem value="7">{t(texts, "discipline.7", "OL-skytte")}</SelectItem>
+              <SelectItem value="8">{t(texts, "discipline.8", "Indoor")}</SelectItem>
             </SelectContent>
           </Select>
         </div>
