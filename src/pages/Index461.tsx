@@ -81,85 +81,111 @@ function useResults(params: {
     queryKey: ["results", club, year, gender, disciplineId, onlyChampionship, ageMin, ageMax],
     queryFn: async () => {
       if (disciplineId !== null) {
-        // Use the explicit eventrace relationship. If your DB uses the other name,
-        // swap fk_results_eventrace → fk_results_event_race.
-        let query = supabase
+        // STEP 1: get eligible events (raceIds) by discipline/year/championship
+        let evQuery = supabase
+          .from("events")
+          .select("eventraceid, eventdate, eventname, eventform, eventdistance, eventclassificationid, disciplineid");
+
+        if (disciplineId === 1) {
+          // Fot-OL should include NULL as legacy
+          evQuery = evQuery.or("disciplineid.eq.1,disciplineid.is.null");
+        } else {
+          evQuery = evQuery.eq("disciplineid", disciplineId);
+        }
+
+        if (year !== null) {
+          const start = `${year}-01-01`;
+          const end = `${year}-12-31`;
+          evQuery = evQuery.gte("eventdate", start).lte("eventdate", end);
+        }
+
+        if (onlyChampionship) {
+          evQuery = evQuery.eq("eventclassificationid", 1);
+        }
+
+        const { data: evs, error: evErr } = await evQuery;
+        if (evErr) throw evErr;
+
+        // Build a map for quick lookup when mapping results back
+        const evList = (evs ?? []).filter((e: any) => e && e.eventraceid != null);
+        const evMap = new Map<number, any>(
+          evList
+            .map((e: any) => [Number(e.eventraceid), e])
+            .filter(([k]) => Number.isFinite(k as number)) as [number, any][]
+        );
+        const raceIds = Array.from(evMap.keys());
+        if (!raceIds.length) return [];
+
+        // STEP 2: optional gender filter → fetch eligible personIds
+        let personIds: number[] | null = null;
+        if (gender && gender !== "Alla") {
+          const sex = gender === "Damer" || gender === "F" ? "F" : "M";
+          const { data: pers, error: pErr } = await supabase
+            .from("persons")
+            .select("personid")
+            .eq("organisationid", club)
+            .eq("personsex", sex);
+          if (pErr) throw pErr;
+          personIds = (pers ?? [])
+            .map((p: any) => Number(p.personid))
+            .filter((n: number) => Number.isFinite(n));
+          if (!personIds.length) return [];
+        }
+
+        // STEP 3: fetch results by raceIds (+ optional personIds) without any embeds
+        let resQuery = supabase
           .from("results")
           .select(`
             eventraceid, eventid, personid, personage, eventclassname, classtypeid, klassfaktor, points,
             resulttime, resulttimediff, resultposition, classresultnumberofstarts, resultcompetitorstatus,
             relayteamname, relayleg, relaylegoverallposition, relayteamendposition, relayteamenddiff,
-            clubparticipation,
-            ev:events!fk_results_eventrace(eventdate, eventname, eventform, eventdistance, eventclassificationid, disciplineid),
-            pe:persons!inner(personsex, personnamegiven, personnamefamily)
+            clubparticipation
           `)
           .eq("clubparticipation", club)
-          // filter on embedded persons via alias
-          .not("pe.personsex", "is", null);
+          .in("eventraceid", raceIds);
 
-        // Discipline on embedded events via alias 'ev'
-        if (disciplineId === 1) {
-          // Fot-OL should include NULL as legacy
-          query = query.or("disciplineid.eq.1,disciplineid.is.null", { foreignTable: "ev" });
-        } else {
-          query = query.eq("disciplineid", disciplineId, { foreignTable: "ev" });
+        if (personIds) {
+          resQuery = resQuery.in("personid", personIds);
         }
 
-        // Year on embedded events (dot-notation against alias)
-        if (year !== null) {
-          const start = `${year}-01-01`;
-          const end = `${year}-12-31`;
-          query = query.gte("ev.eventdate", start).lte("ev.eventdate", end);
-        }
+        const { data, error } = await resQuery;
+        if (error) throw error;
 
-        // Championship on embedded events
-        if (onlyChampionship) {
-          query = query.eq("ev.eventclassificationid", 1);
-        }
+        // Map results and enrich with event fields from evMap
+        const results = (data ?? []).map((row: any) => {
+          const ev = evMap.get(Number(row.eventraceid)) || {};
+          return {
+            eventraceid: row.eventraceid,
+            eventid: row.eventid,
+            eventdate: ev.eventdate ?? null,
+            eventname: ev.eventname ?? "",
+            eventform: ev.eventform ?? "",
+            eventdistance: ev.eventdistance ?? "",
+            eventclassificationid: ev.eventclassificationid ?? null,
+            personid: row.personid,
+            personsex: null, // not embedded here; we only used it to filter personIds
+            personnamegiven: "", // optionally hydrate later if needed
+            personnamefamily: "",
+            personage: row.personage,
+            eventclassname: row.eventclassname,
+            classtypeid: row.classtypeid,
+            klassfaktor: row.klassfaktor,
+            points: row.points,
+            resulttime: row.resulttime,
+            resulttimediff: row.resulttimediff,
+            resultposition: row.resultposition,
+            classresultnumberofstarts: row.classresultnumberofstarts,
+            resultcompetitorstatus: row.resultcompetitorstatus,
+            relayteamname: row.relayteamname,
+            relayleg: row.relayleg,
+            relaylegoverallposition: row.relaylegoverallposition,
+            relayteamendposition: row.relayteamendposition,
+            relayteamenddiff: row.relayteamenddiff,
+            clubparticipation: row.clubparticipation,
+          };
+        });
 
-        // Gender on embedded persons (alias)
-        if (gender && gender !== "Alla") {
-          const sex = gender === "Damer" || gender === "F" ? "F" : "M";
-          query = query.eq("pe.personsex", sex);
-        }
-
-        const { data, error } = await query;
-        if (error) {
-          console.error("[DisciplineFilter] error", error);
-          throw error;
-        }
-        console.debug("[DisciplineFilter] rows", (data ?? []).length);
-
-        let results = (data ?? []).map((row: any) => ({
-          eventraceid: row.eventraceid,
-          eventid: row.eventid,
-          eventdate: row.ev?.eventdate ?? null,
-          eventname: row.ev?.eventname ?? "",
-          eventform: row.ev?.eventform ?? "",
-          eventdistance: row.ev?.eventdistance ?? "",
-          eventclassificationid: row.ev?.eventclassificationid ?? null,
-          personid: row.personid,
-          personsex: row.pe?.personsex ?? null,
-          personnamegiven: row.pe?.personnamegiven ?? "",
-          personnamefamily: row.pe?.personnamefamily ?? "",
-          personage: row.personage,
-          eventclassname: row.eventclassname,
-          classtypeid: row.classtypeid,
-          klassfaktor: row.klassfaktor,
-          points: row.points,
-          resulttime: row.resulttime,
-          resulttimediff: row.resulttimediff,
-          resultposition: row.resultposition,
-          classresultnumberofstarts: row.classresultnumberofstarts,
-          resultcompetitorstatus: row.resultcompetitorstatus,
-          relayteamname: row.relayteamname,
-          relayleg: row.relayleg,
-          relaylegoverallposition: row.relaylegoverallposition,
-          relayteamendposition: row.relayteamendposition,
-          relayteamenddiff: row.relayteamenddiff,
-          clubparticipation: row.clubparticipation,
-        }));
-
+        console.debug("[DisciplineFilter 3-step] raceIds:", raceIds.length, "results:", results.length);
         return results;
       } else {
         // Use the existing RPC function when no disciplineId filter
