@@ -106,7 +106,13 @@ function useResults(params: {
         const { data: evs, error: evErr } = await evQuery;
         if (evErr) throw evErr;
 
-        const eventIds = (evs ?? []).map((e: any) => e.eventid);
+        // IMPORTANT: cast eventIds to numbers to avoid type mismatch in .in(...)
+        const evList = (evs ?? []).filter((e: any) => e && e.eventid != null);
+        const eventIds = evList
+          .map((e: any) => Number(e.eventid))
+          .filter((n: number) => Number.isFinite(n));
+        console.debug("[DisciplineFilter] events matched:", evList.length, "eventIds sample:", eventIds.slice(0, 10));
+
         if (!eventIds.length) return [];
 
         // STEP 2: fetch results for those eventIds, applying club/gender filters
@@ -131,6 +137,8 @@ function useResults(params: {
 
         const { data, error } = await query;
         if (error) throw error;
+
+        console.debug("[DisciplineFilter] results matched:", (data ?? []).length);
 
         let results = (data ?? []).map((row: any) => ({
           eventraceid: row.eventraceid,
@@ -162,7 +170,6 @@ function useResults(params: {
           clubparticipation: row.clubparticipation,
         }));
 
-        // Keep the final return the same as in your existing function
         return results;
       } else {
         // Use the existing RPC function when no disciplineId filter
