@@ -81,7 +81,8 @@ function useResults(params: {
     queryKey: ["results", club, year, gender, disciplineId, onlyChampionship, ageMin, ageMax],
     queryFn: async () => {
       if (disciplineId !== null) {
-        // One-shot query with INNER joins so filters on embedded tables take effect
+        // Use the explicit eventrace relationship. If your DB uses the other name,
+        // swap fk_results_eventrace → fk_results_event_race.
         let query = supabase
           .from("results")
           .select(`
@@ -89,56 +90,58 @@ function useResults(params: {
             resulttime, resulttimediff, resultposition, classresultnumberofstarts, resultcompetitorstatus,
             relayteamname, relayleg, relaylegoverallposition, relayteamendposition, relayteamenddiff,
             clubparticipation,
-            events!inner(eventdate, eventname, eventform, eventdistance, eventclassificationid, disciplineid),
-            persons!inner(personsex, personnamegiven, personnamefamily)
+            ev:events!fk_results_eventrace(eventdate, eventname, eventform, eventdistance, eventclassificationid, disciplineid),
+            pe:persons!inner(personsex, personnamegiven, personnamefamily)
           `)
           .eq("clubparticipation", club)
-          .not("persons.personsex", "is", null);
+          // filter on embedded persons via alias
+          .not("pe.personsex", "is", null);
 
-        // Discipline on embedded events (use foreignTable to avoid invalid URL)
+        // Discipline on embedded events via alias 'ev'
         if (disciplineId === 1) {
-          // Fot-OL should also include NULL for legacy rows
-          query = query.or("disciplineid.eq.1,disciplineid.is.null", { foreignTable: "events" });
+          // Fot-OL should include NULL as legacy
+          query = query.or("disciplineid.eq.1,disciplineid.is.null", { foreignTable: "ev" });
         } else {
-          query = query.eq("disciplineid", disciplineId, { foreignTable: "events" });
+          query = query.eq("disciplineid", disciplineId, { foreignTable: "ev" });
         }
 
-        // Year (on events.eventdate)
+        // Year on embedded events (dot-notation against alias)
         if (year !== null) {
           const start = `${year}-01-01`;
           const end = `${year}-12-31`;
-          query = query
-            .gte("eventdate", start, { foreignTable: "events" })
-            .lte("eventdate", end, { foreignTable: "events" });
+          query = query.gte("ev.eventdate", start).lte("ev.eventdate", end);
         }
 
-        // Championship toggle (optional)
+        // Championship on embedded events
         if (onlyChampionship) {
-          query = query.eq("eventclassificationid", 1, { foreignTable: "events" });
+          query = query.eq("ev.eventclassificationid", 1);
         }
 
-        // Gender (on embedded persons.*)
+        // Gender on embedded persons (alias)
         if (gender && gender !== "Alla") {
           const sex = gender === "Damer" || gender === "F" ? "F" : "M";
-          query = query.eq("personsex", sex, { foreignTable: "persons" });
+          query = query.eq("pe.personsex", sex);
         }
 
         const { data, error } = await query;
-        if (error) console.error("[DisciplineFilter] error", error);
+        if (error) {
+          console.error("[DisciplineFilter] error", error);
+          throw error;
+        }
         console.debug("[DisciplineFilter] rows", (data ?? []).length);
 
         let results = (data ?? []).map((row: any) => ({
           eventraceid: row.eventraceid,
           eventid: row.eventid,
-          eventdate: row.events?.eventdate ?? null,
-          eventname: row.events?.eventname ?? "",
-          eventform: row.events?.eventform ?? "",
-          eventdistance: row.events?.eventdistance ?? "",
-          eventclassificationid: row.events?.eventclassificationid ?? null,
+          eventdate: row.ev?.eventdate ?? null,
+          eventname: row.ev?.eventname ?? "",
+          eventform: row.ev?.eventform ?? "",
+          eventdistance: row.ev?.eventdistance ?? "",
+          eventclassificationid: row.ev?.eventclassificationid ?? null,
           personid: row.personid,
-          personsex: row.persons?.personsex ?? null,
-          personnamegiven: row.persons?.personnamegiven ?? "",
-          personnamefamily: row.persons?.personnamefamily ?? "",
+          personsex: row.pe?.personsex ?? null,
+          personnamegiven: row.pe?.personnamegiven ?? "",
+          personnamefamily: row.pe?.personnamefamily ?? "",
           personage: row.personage,
           eventclassname: row.eventclassname,
           classtypeid: row.classtypeid,
