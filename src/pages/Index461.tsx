@@ -80,90 +80,70 @@ function useResults(params: {
   return useQuery<Result[]>({
     queryKey: ["results", club, year, gender, disciplineId, onlyChampionship, ageMin, ageMax],
     queryFn: async () => {
-      // Since the RPC doesn't support disciplineId filtering, we need to get events data separately
       if (disciplineId !== null) {
-        // Get results filtered by disciplineId using a direct query
-        let query = supabase
-          .from('results')
-          .select(`
-            eventraceid,
-            eventid,
-            personid,
-            personage,
-            eventclassname,
-            classtypeid,
-            klassfaktor,
-            points,
-            resulttime,
-            resulttimediff,
-            resultposition,
-            classresultnumberofstarts,
-            resultcompetitorstatus,
-            relayteamname,
-            relayleg,
-            relaylegoverallposition,
-            relayteamendposition,
-            relayteamenddiff,
-            clubparticipation,
-            events!inner(
-              eventdate,
-              eventname,
-              eventform,
-              eventdistance,
-              eventclassificationid,
-              disciplineid
-            ),
-            persons!inner(
-              personsex,
-              personnamegiven,
-              personnamefamily
-            )
-          `)
-          .eq('clubparticipation', club)
-          .not('persons.personsex', 'is', null);
+        // STEP 1: fetch eligible eventIds from events based on discipline (+ year/+ championship)
+        let evQuery = supabase
+          .from("events")
+          .select("eventid, eventdate, disciplineid");
 
-        // Discipline filter
         if (disciplineId === 1) {
-          // Treat missing discipline as Fot-OL to avoid empty tables when data is incomplete
-          query = query.or(`events.disciplineid.eq.1,events.disciplineid.is.null`);
+          // Treat missing discipline as Fot-OL to capture legacy rows
+          evQuery = evQuery.or("disciplineid.eq.1,disciplineid.is.null");
         } else {
-          query = query.eq('events.disciplineid', disciplineId);
+          evQuery = evQuery.eq("disciplineid", disciplineId);
         }
 
-        // Apply YEAR filter (on events.eventdate)
         if (year !== null) {
           const start = `${year}-01-01`;
           const end = `${year}-12-31`;
-          query = query.gte('events.eventdate', start).lte('events.eventdate', end);
+          evQuery = evQuery.gte("eventdate", start).lte("eventdate", end);
         }
 
-        // Apply GENDER filter (F/M). Ignore when "Alla".
+        if (onlyChampionship) {
+          evQuery = evQuery.eq("eventclassificationid", 1);
+        }
+
+        const { data: evs, error: evErr } = await evQuery;
+        if (evErr) throw evErr;
+
+        const eventIds = (evs ?? []).map((e: any) => e.eventid);
+        if (!eventIds.length) return [];
+
+        // STEP 2: fetch results for those eventIds, applying club/gender filters
+        let query = supabase
+          .from("results")
+          .select(`
+            eventraceid, eventid, personid, personage, eventclassname, classtypeid, klassfaktor, points,
+            resulttime, resulttimediff, resultposition, classresultnumberofstarts, resultcompetitorstatus,
+            relayteamname, relayleg, relaylegoverallposition, relayteamendposition, relayteamenddiff,
+            clubparticipation,
+            events(eventdate, eventname, eventform, eventdistance, eventclassificationid),
+            persons(personsex, personnamegiven, personnamefamily)
+          `)
+          .eq("clubparticipation", club)
+          .in("eventid", eventIds)
+          .not("persons.personsex", "is", null);
+
         if (gender && gender !== "Alla") {
           const sex = gender === "Damer" || gender === "F" ? "F" : "M";
-          query = query.eq('persons.personsex', sex);
-        }
-
-        // Apply CHAMPIONSHIP filter (optional)
-        if (onlyChampionship) {
-          query = query.eq('events.eventclassificationid', 1);
+          query = query.eq("persons.personsex", sex);
         }
 
         const { data, error } = await query;
-        
         if (error) throw error;
-        
+
         let results = (data ?? []).map((row: any) => ({
           eventraceid: row.eventraceid,
           eventid: row.eventid,
-          eventdate: row.events.eventdate,
-          eventname: row.events.eventname,
-          eventform: row.events.eventform,
-          eventdistance: row.events.eventdistance,
-          eventclassificationid: row.events.eventclassificationid,
+          eventdate: row.events?.eventdate ?? null,
+          eventname: row.events?.eventname ?? "",
+          eventform: row.events?.eventform ?? "",
+          eventdistance: row.events?.eventdistance ?? "",
+          eventclassificationid: row.events?.eventclassificationid ?? null,
           personid: row.personid,
-          personsex: row.persons.personsex,
-          personnamegiven: row.persons.personnamegiven,
-          personnamefamily: row.persons.personnamefamily,
+          personsex: row.persons?.personsex ?? null,
+          personnamegiven: row.persons?.personnamegiven ?? "",
+          personnamefamily: row.persons?.personnamefamily ?? "",
           personage: row.personage,
           eventclassname: row.eventclassname,
           classtypeid: row.classtypeid,
@@ -180,17 +160,9 @@ function useResults(params: {
           relayteamendposition: row.relayteamendposition,
           relayteamenddiff: row.relayteamenddiff,
           clubparticipation: row.clubparticipation,
-        })) as Result[];
+        }));
 
-        // Apply additional client-side filters for age ranges (not supported in query)
-        if (ageMin !== null) {
-          results = results.filter(r => (r.personage ?? 0) >= ageMin);
-        }
-        
-        if (ageMax !== null) {
-          results = results.filter(r => (r.personage ?? 0) <= ageMax);
-        }
-        
+        // Keep the final return the same as in your existing function
         return results;
       } else {
         // Use the existing RPC function when no disciplineId filter
