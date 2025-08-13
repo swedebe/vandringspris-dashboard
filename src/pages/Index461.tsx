@@ -83,7 +83,7 @@ function useResults(params: {
       // Since the RPC doesn't support disciplineId filtering, we need to get events data separately
       if (disciplineId !== null) {
         // Get results filtered by disciplineId using a direct query
-        const { data, error } = await supabase
+        let query = supabase
           .from('results')
           .select(`
             eventraceid,
@@ -122,6 +122,26 @@ function useResults(params: {
           .eq('clubparticipation', club)
           .eq('events.disciplineid', disciplineId)
           .not('persons.personsex', 'is', null);
+
+        // Apply YEAR filter (on events.eventdate)
+        if (year !== null) {
+          const start = `${year}-01-01`;
+          const end = `${year}-12-31`;
+          query = query.gte('events.eventdate', start).lte('events.eventdate', end);
+        }
+
+        // Apply GENDER filter (F/M). Ignore when "Alla".
+        if (gender && gender !== "Alla") {
+          const sex = gender === "Damer" || gender === "F" ? "F" : "M";
+          query = query.eq('persons.personsex', sex);
+        }
+
+        // Apply CHAMPIONSHIP filter (optional)
+        if (onlyChampionship) {
+          query = query.eq('events.eventclassificationid', 1);
+        }
+
+        const { data, error } = await query;
         
         if (error) throw error;
         
@@ -155,23 +175,7 @@ function useResults(params: {
           clubparticipation: row.clubparticipation,
         })) as Result[];
 
-        // Apply additional filters
-        if (year !== null) {
-          results = results.filter(r => new Date(r.eventdate).getFullYear() === year);
-        }
-        
-        if (gender && gender !== "Alla") {
-          const genderNorm = gender === "Damer" || gender === "F" ? "F" : 
-                           gender === "Herrar" || gender === "M" ? "M" : null;
-          if (genderNorm) {
-            results = results.filter(r => r.personsex === genderNorm);
-          }
-        }
-        
-        if (onlyChampionship) {
-          results = results.filter(r => r.eventclassificationid === 1);
-        }
-        
+        // Apply additional client-side filters for age ranges (not supported in query)
         if (ageMin !== null) {
           results = results.filter(r => (r.personage ?? 0) >= ageMin);
         }
@@ -287,6 +291,7 @@ export default function Index461() {
     "discipline.4",
     "discipline.7",
     "discipline.8",
+    "discipline.all",
     "button.update",
     "button.updatePersons",
     "button.updateEvents",
@@ -313,7 +318,7 @@ export default function Index461() {
 
   const [year, setYear] = useState<number | undefined>(defaultYear);
   const [gender, setGender] = useState<string>("Alla");
-  const [disciplineId, setDisciplineId] = useState<number>(1); // Default to Fot-OL
+  const [disciplineId, setDisciplineId] = useState<number | null>(1); // Default to Fot-OL
 
   const { data: clubName = "" } = useClubName(CLUB_ID);
 
@@ -478,7 +483,7 @@ export default function Index461() {
         </div>
         <div className="w-48">
           <label className="block text-sm mb-1">{t(texts, "filters.discipline", "Disciplin")}</label>
-          <Select value={String(disciplineId)} onValueChange={(v) => setDisciplineId(Number(v))}>
+          <Select value={disciplineId === null ? "ALL" : String(disciplineId)} onValueChange={(v) => setDisciplineId(v === "ALL" ? null : Number(v))}>
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
@@ -489,6 +494,7 @@ export default function Index461() {
               <SelectItem value="4">{t(texts, "discipline.4", "Pre-O")}</SelectItem>
               <SelectItem value="7">{t(texts, "discipline.7", "OL-skytte")}</SelectItem>
               <SelectItem value="8">{t(texts, "discipline.8", "Indoor")}</SelectItem>
+              <SelectItem value="ALL">{t(texts, "discipline.all", "Alla")}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -625,136 +631,11 @@ export default function Index461() {
         </DialogContent>
       </Dialog>
 
-      {/* Dev logs and manual triggers */}
+      {/* Dev logs */}
       <section className="space-y-3">
-        <div className="flex gap-2">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span>
-                <Button disabled={!getProxyBaseUrl().url} onClick={() => handleProxy("/api/update-persons", "Uppdatera personer")}>
-                  {t(texts, "button.updatePersons", "Uppdatera personer")}
-                </Button>
-              </span>
-            </TooltipTrigger>
-            {!getProxyBaseUrl().url && <TooltipContent>PROXY_BASE_URL not set</TooltipContent>}
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span>
-                <Button disabled={!getProxyBaseUrl().url} onClick={() => handleProxy("/api/update-events", "Uppdatera tävlingar")}>
-                  {t(texts, "button.updateEvents", "Uppdatera tävlingar")}
-                </Button>
-              </span>
-            </TooltipTrigger>
-            {!getProxyBaseUrl().url && <TooltipContent>PROXY_BASE_URL not set</TooltipContent>}
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span>
-                <Button disabled={!getProxyBaseUrl().url} onClick={() => handleProxy("/api/update-results", "Uppdatera resultat")}>
-                  {t(texts, "button.updateResults", "Uppdatera resultat")}
-                </Button>
-              </span>
-            </TooltipTrigger>
-            {!getProxyBaseUrl().url && <TooltipContent>PROXY_BASE_URL not set</TooltipContent>}
-          </Tooltip>
-          <Button variant="secondary" onClick={refreshLogs}>
-            {t(texts, "button.update", "Uppdatera")}
-          </Button>
-        </div>
-
-        <div className="grid md:grid-cols-2 gap-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>API-anrop mot Eventor (senaste 100)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="max-h-80 overflow-auto text-sm">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>URL</TableHead>
-                      <TableHead>Start</TableHead>
-                      <TableHead>Slut</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Fel</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {apiLogs.map((l: any, idx: number) => (
-                      <TableRow key={idx}>
-                        <TableCell className="break-all">{l.request}</TableCell>
-                        <TableCell>{l.started}</TableCell>
-                        <TableCell>{l.completed}</TableCell>
-                        <TableCell>{l.responsecode}</TableCell>
-                        <TableCell>{l.errormessage}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Batchkörningar (senaste 100)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="max-h-80 overflow-auto text-sm">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Typ</TableHead>
-                      <TableHead>Start</TableHead>
-                      <TableHead>Slut</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Kommentar</TableHead>
-                      <TableHead>Antal rader</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {batches.map((b: any) => (
-                      <TableRow key={b.id}>
-                        <TableCell>{b.appversion}</TableCell>
-                        <TableCell>{b.starttime}</TableCell>
-                        <TableCell>{b.endtime}</TableCell>
-                        <TableCell>{b.status}</TableCell>
-                        <TableCell>{b.comment}</TableCell>
-                        <TableCell>{b.numberofrowsafter}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </section>
-
-      {/* Warnings placeholder */}
-      <section className="space-y-3">
-        <Card>
-          <CardHeader>
-            <CardTitle>Varningar</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <p className="text-sm text-muted-foreground">
-              Kräver ny RPC från backend för att hämta varningar.
-            </p>
-            <Button
-              variant="secondary"
-              onClick={() =>
-                toast({
-                  title: "Varningskontroll",
-                  description: "Ej implementerat – exponera en RPC för varningar.",
-                })
-              }
-            >
-              Kör varningskontroll
-            </Button>
-          </CardContent>
-        </Card>
+        <Button variant="secondary" onClick={refreshLogs}>
+          {t(texts, "button.update", "Uppdatera")}
+        </Button>
       </section>
     </main>
   );
