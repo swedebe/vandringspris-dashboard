@@ -466,11 +466,11 @@ export default function Index461() {
 
       {/* Drilldown */}
       <Dialog open={drillOpen} onOpenChange={setDrillOpen}>
-        <DialogContent className="max-w-4xl">
-          <DialogHeader>
+        <DialogContent className="w-[min(90vw,960px)] max-w-[90vw] h-screen max-h-[85vh] sm:h-auto sm:max-h-[85vh] flex flex-col">
+          <DialogHeader className="sticky top-0 z-10 bg-background border-b pb-4">
             <DialogTitle>{drillTitle}</DialogTitle>
           </DialogHeader>
-          <div className="overflow-x-auto">
+          <div className="flex-1 overflow-y-auto overflow-x-auto min-h-0">
             <Table>
               <TableHeader>
                 <TableRow>
