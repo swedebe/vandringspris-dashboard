@@ -81,10 +81,10 @@ function useResults(params: {
     queryKey: ["results", club, year, gender, disciplineId, onlyChampionship, ageMin, ageMax],
     queryFn: async () => {
       if (disciplineId !== null) {
-        // STEP 1: fetch eligible eventIds from events based on discipline (+ year/+ championship)
+        // STEP 1: fetch eligible raceIds from events based on discipline (+ year/+ championship)
         let evQuery = supabase
           .from("events")
-          .select("eventid, eventdate, disciplineid");
+          .select("eventraceid, eventdate, disciplineid, eventclassificationid");
 
         if (disciplineId === 1) {
           // Treat missing discipline as Fot-OL to capture legacy rows
@@ -106,16 +106,14 @@ function useResults(params: {
         const { data: evs, error: evErr } = await evQuery;
         if (evErr) throw evErr;
 
-        // IMPORTANT: cast eventIds to numbers to avoid type mismatch in .in(...)
-        const evList = (evs ?? []).filter((e: any) => e && e.eventid != null);
-        const eventIds = evList
-          .map((e: any) => Number(e.eventid))
+        // Use eventraceid to match results → events (this is the canonical FK in your schema)
+        const raceIds = (evs ?? [])
+          .map((e: any) => Number(e.eventraceid))
           .filter((n: number) => Number.isFinite(n));
-        console.debug("[DisciplineFilter] events matched:", evList.length, "eventIds sample:", eventIds.slice(0, 10));
 
-        if (!eventIds.length) return [];
+        if (!raceIds.length) return [];
 
-        // STEP 2: fetch results for those eventIds, applying club/gender filters
+        // STEP 2: fetch results for those raceIds, applying club/gender filters
         let query = supabase
           .from("results")
           .select(`
@@ -127,7 +125,7 @@ function useResults(params: {
             persons(personsex, personnamegiven, personnamefamily)
           `)
           .eq("clubparticipation", club)
-          .in("eventid", eventIds)
+          .in("eventraceid", raceIds)
           .not("persons.personsex", "is", null);
 
         if (gender && gender !== "Alla") {
@@ -137,8 +135,6 @@ function useResults(params: {
 
         const { data, error } = await query;
         if (error) throw error;
-
-        console.debug("[DisciplineFilter] results matched:", (data ?? []).length);
 
         let results = (data ?? []).map((row: any) => ({
           eventraceid: row.eventraceid,
