@@ -81,39 +81,7 @@ function useResults(params: {
     queryKey: ["results", club, year, gender, disciplineId, onlyChampionship, ageMin, ageMax],
     queryFn: async () => {
       if (disciplineId !== null) {
-        // STEP 1: fetch eligible raceIds from events based on discipline (+ year/+ championship)
-        let evQuery = supabase
-          .from("events")
-          .select("eventraceid, eventdate, disciplineid, eventclassificationid");
-
-        if (disciplineId === 1) {
-          // Treat missing discipline as Fot-OL to capture legacy rows
-          evQuery = evQuery.or("disciplineid.eq.1,disciplineid.is.null");
-        } else {
-          evQuery = evQuery.eq("disciplineid", disciplineId);
-        }
-
-        if (year !== null) {
-          const start = `${year}-01-01`;
-          const end = `${year}-12-31`;
-          evQuery = evQuery.gte("eventdate", start).lte("eventdate", end);
-        }
-
-        if (onlyChampionship) {
-          evQuery = evQuery.eq("eventclassificationid", 1);
-        }
-
-        const { data: evs, error: evErr } = await evQuery;
-        if (evErr) throw evErr;
-
-        // Use eventraceid to match results → events (this is the canonical FK in your schema)
-        const raceIds = (evs ?? [])
-          .map((e: any) => Number(e.eventraceid))
-          .filter((n: number) => Number.isFinite(n));
-
-        if (!raceIds.length) return [];
-
-        // STEP 2: fetch results for those raceIds, applying club/gender filters
+        // One-shot query with INNER joins so filters on embedded tables take effect
         let query = supabase
           .from("results")
           .select(`
@@ -121,13 +89,33 @@ function useResults(params: {
             resulttime, resulttimediff, resultposition, classresultnumberofstarts, resultcompetitorstatus,
             relayteamname, relayleg, relaylegoverallposition, relayteamendposition, relayteamenddiff,
             clubparticipation,
-            events(eventdate, eventname, eventform, eventdistance, eventclassificationid),
-            persons(personsex, personnamegiven, personnamefamily)
+            events!inner(eventdate, eventname, eventform, eventdistance, eventclassificationid, disciplineid),
+            persons!inner(personsex, personnamegiven, personnamefamily)
           `)
           .eq("clubparticipation", club)
-          .in("eventraceid", raceIds)
           .not("persons.personsex", "is", null);
 
+        // Discipline on embedded events.*
+        if (disciplineId === 1) {
+          // include NULL as Fot-OL legacy
+          query = query.or("events.disciplineid.eq.1,events.disciplineid.is.null");
+        } else {
+          query = query.eq("events.disciplineid", disciplineId);
+        }
+
+        // Year (on events.eventdate)
+        if (year !== null) {
+          const start = `${year}-01-01`;
+          const end = `${year}-12-31`;
+          query = query.gte("events.eventdate", start).lte("events.eventdate", end);
+        }
+
+        // Championship toggle (optional)
+        if (onlyChampionship) {
+          query = query.eq("events.eventclassificationid", 1);
+        }
+
+        // Gender (on embedded persons.*)
         if (gender && gender !== "Alla") {
           const sex = gender === "Damer" || gender === "F" ? "F" : "M";
           query = query.eq("persons.personsex", sex);
@@ -135,6 +123,9 @@ function useResults(params: {
 
         const { data, error } = await query;
         if (error) throw error;
+
+        // Debug: how many rows matched via inner-join path
+        console.debug("[DisciplineFilter:inner] rows:", (data ?? []).length);
 
         let results = (data ?? []).map((row: any) => ({
           eventraceid: row.eventraceid,
