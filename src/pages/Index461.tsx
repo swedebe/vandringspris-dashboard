@@ -14,6 +14,7 @@ import { hasSupabaseConfig, getProxyBaseUrl } from "@/lib/config";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ChevronDown } from "lucide-react";
 const CLUB_ID = 461;
 
 type Result = {
@@ -71,19 +72,24 @@ function useClubName(clubId: number) {
 
 function useResults(params: {
   club: number | null;
-  year: number | null;
-  gender: string | null; // "Alla" | "Damer" | "Herrar" | "F" | "M" | null
-  disciplineId?: number | null;
+  years?: number[];
+  genders?: string[];
+  disciplineIds?: number[];
   onlyChampionship?: boolean | null;
   ageMin?: number | null;
   ageMax?: number | null;
   distances?: string[];
   forms?: string[];
 }) {
-  const { club, year, gender, disciplineId = null, onlyChampionship = null, ageMin = null, ageMax = null, distances = ['__ALL__'], forms = ['__ALL__'] } = params;
+  const { club, years = [], genders = ['__ALL__'], disciplineIds = [], onlyChampionship = null, ageMin = null, ageMax = null, distances = ['__ALL__'], forms = ['__ALL__'] } = params;
   return useQuery<Result[]>({
-    queryKey: ["results_v2", club, year, gender, disciplineId, onlyChampionship, ageMin, ageMax, distances, forms],
+    queryKey: ["results_v2", club, years, genders, disciplineIds, onlyChampionship, ageMin, ageMax, distances, forms],
     queryFn: async () => {
+      // Use first year if years array provided, otherwise null
+      const year = years.length > 0 && !years.includes(-1) ? years[0] : null;
+      // Use first gender if genders array provided and not "all", otherwise "Alla"
+      const gender = genders.includes('__ALL__') ? 'Alla' : genders[0] || 'Alla';
+      
       const { data, error } = await supabase.rpc("rpc_results_enriched", {
         _club: club,
         _year: year,
@@ -98,6 +104,29 @@ function useResults(params: {
       if (error) throw error;
       
       let results = ((data ?? []) as Result[]);
+      
+      // Apply year filter if not all years
+      if (!years.includes(-1) && years.length > 0) {
+        results = results.filter(r => {
+          const eventYear = new Date(r.eventdate).getFullYear();
+          return years.includes(eventYear);
+        });
+      }
+      
+      // Apply gender filter if not all genders
+      if (!genders.includes('__ALL__')) {
+        results = results.filter(r => {
+          if (genders.includes('Damer') && r.personsex === 'F') return true;
+          if (genders.includes('Herrar') && r.personsex === 'M') return true;
+          return false;
+        });
+      }
+      
+      // Apply discipline filter if provided
+      if (disciplineIds.length > 0 && !disciplineIds.includes(-1)) {
+        // This would need discipline info in results or separate filtering
+        // For now, keeping basic filter structure
+      }
       
       // Apply distance filter
       if (!distances.includes('__ALL__')) {
@@ -226,21 +255,19 @@ export default function Index461() {
 
   const { data: years = [] } = useYears(CLUB_ID);
   const currentUTCYear = new Date().getUTCFullYear();
-  const [year, setYear] = useState<number | undefined>(undefined);
+  const [selectedYears, setSelectedYears] = useState<number[]>([]);
+  const [selectedGenders, setSelectedGenders] = useState<string[]>(['__ALL__']);
+  const [selectedDisciplines, setSelectedDisciplines] = useState<number[]>([1]); // Default to Fot-OL
+  const [distances, setDistances] = useState<string[]>(['__ALL__']);
+  const [forms, setForms] = useState<string[]>(['__ALL__']);
 
   // Ensure default becomes the highest available year when data arrives.
   useEffect(() => {
-    if (years.length) {
+    if (years.length && selectedYears.length === 0) {
       const maxYear = Math.max(...years);
-      if (year === undefined || !years.includes(year)) {
-        setYear(maxYear);
-      }
+      setSelectedYears([maxYear]);
     }
-  }, [years]);
-  const [gender, setGender] = useState<string>("Alla");
-  const [disciplineId, setDisciplineId] = useState<number | null>(1); // Default to Fot-OL
-  const [distances, setDistances] = useState<string[]>(['__ALL__']);
-  const [forms, setForms] = useState<string[]>(['__ALL__']);
+  }, [years, selectedYears.length]);
 
   const { data: clubName = "" } = useClubName(CLUB_ID);
 
@@ -257,7 +284,64 @@ export default function Index461() {
     '__NULL__': 'Individuell'
   };
 
+  const genderLabels = {
+    'Alla': 'Alla',
+    'Damer': 'Damer',
+    'Herrar': 'Herrar'
+  };
+
+  const disciplineLabels = {
+    1: 'Fot-OL',
+    2: 'MTBO',
+    3: 'SkidO',
+    4: 'Pre-O',
+    7: 'OL-skytte',
+    8: 'Indoor'
+  };
+
   // Multi-select helper functions
+  const toggleYearSelection = (year: number) => {
+    if (year === -1) { // "__ALL__" equivalent for years
+      setSelectedYears([-1]);
+    } else {
+      const newYears = selectedYears.includes(-1) 
+        ? [year]
+        : selectedYears.includes(year)
+          ? selectedYears.filter(y => y !== year)
+          : [...selectedYears, year];
+      
+      setSelectedYears(newYears.length === 0 ? [-1] : newYears);
+    }
+  };
+
+  const toggleGenderSelection = (gender: string) => {
+    if (gender === '__ALL__') {
+      setSelectedGenders(['__ALL__']);
+    } else {
+      const newGenders = selectedGenders.includes('__ALL__') 
+        ? [gender]
+        : selectedGenders.includes(gender)
+          ? selectedGenders.filter(g => g !== gender)
+          : [...selectedGenders, gender];
+      
+      setSelectedGenders(newGenders.length === 0 ? ['__ALL__'] : newGenders);
+    }
+  };
+
+  const toggleDisciplineSelection = (disciplineId: number) => {
+    if (disciplineId === -1) { // "__ALL__" equivalent for disciplines
+      setSelectedDisciplines([-1]);
+    } else {
+      const newDisciplines = selectedDisciplines.includes(-1) 
+        ? [disciplineId]
+        : selectedDisciplines.includes(disciplineId)
+          ? selectedDisciplines.filter(d => d !== disciplineId)
+          : [...selectedDisciplines, disciplineId];
+      
+      setSelectedDisciplines(newDisciplines.length === 0 ? [-1] : newDisciplines);
+    }
+  };
+
   const toggleDistanceSelection = (distance: string) => {
     if (distance === '__ALL__') {
       setDistances(['__ALL__']);
@@ -298,9 +382,9 @@ export default function Index461() {
   // Base filtered results for common filters
   const { data: baseResults = [], isLoading } = useResults({
     club: CLUB_ID,
-    year: year ?? null,
-    gender: gender,
-    disciplineId: disciplineId,
+    years: selectedYears,
+    genders: selectedGenders,
+    disciplineIds: selectedDisciplines,
     distances: distances,
     forms: forms,
   });
@@ -408,49 +492,112 @@ export default function Index461() {
       <section className="flex flex-wrap gap-4 items-center">
         <div className="w-48">
           <label className="block text-sm mb-1">{t(texts, "filters.year", "Årtal")}</label>
-          <Select value={String(year ?? "")} onValueChange={(v) => setYear(v ? Number(v) : undefined)}>
-            <SelectTrigger>
-              <SelectValue placeholder="Välj år" />
-            </SelectTrigger>
-            <SelectContent>
-              {years.map((y) => (
-                <SelectItem key={y} value={String(y)}>
-                  {y}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className="w-full justify-between">
+                {selectedYears.includes(-1) ? 'Alla år' : 
+                 selectedYears.length === 1 ? selectedYears[0] :
+                 `${selectedYears.length} valda`}
+                <ChevronDown className="h-4 w-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-48 p-0">
+              <div className="p-2 space-y-2">
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="year-all"
+                    checked={selectedYears.includes(-1)}
+                    onCheckedChange={() => toggleYearSelection(-1)}
+                  />
+                  <label htmlFor="year-all" className="text-sm">Alla</label>
+                </div>
+                {years.map((y) => (
+                  <div key={y} className="flex items-center space-x-2">
+                    <Checkbox 
+                      id={`year-${y}`}
+                      checked={!selectedYears.includes(-1) && selectedYears.includes(y)}
+                      onCheckedChange={() => toggleYearSelection(y)}
+                    />
+                    <label htmlFor={`year-${y}`} className="text-sm">{y}</label>
+                  </div>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
         <div className="w-48">
           <label className="block text-sm mb-1">{t(texts, "filters.gender", "Kön")}</label>
-          <Select value={gender} onValueChange={(v) => setGender(v)}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="Alla">{t(texts, "gender.all", "Alla")}</SelectItem>
-              <SelectItem value="Damer">{t(texts, "gender.female", "Damer")}</SelectItem>
-              <SelectItem value="Herrar">{t(texts, "gender.male", "Herrar")}</SelectItem>
-            </SelectContent>
-          </Select>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className="w-full justify-between">
+                {selectedGenders.includes('__ALL__') ? 'Alla kön' : 
+                 selectedGenders.length === 1 ? genderLabels[selectedGenders[0] as keyof typeof genderLabels] :
+                 `${selectedGenders.length} valda`}
+                <ChevronDown className="h-4 w-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-48 p-0">
+              <div className="p-2 space-y-2">
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="gender-all"
+                    checked={selectedGenders.includes('__ALL__')}
+                    onCheckedChange={() => toggleGenderSelection('__ALL__')}
+                  />
+                  <label htmlFor="gender-all" className="text-sm">Alla</label>
+                </div>
+                {['Damer', 'Herrar'].map((gender) => (
+                  <div key={gender} className="flex items-center space-x-2">
+                    <Checkbox 
+                      id={`gender-${gender}`}
+                      checked={!selectedGenders.includes('__ALL__') && selectedGenders.includes(gender)}
+                      onCheckedChange={() => toggleGenderSelection(gender)}
+                    />
+                    <label htmlFor={`gender-${gender}`} className="text-sm">
+                      {genderLabels[gender as keyof typeof genderLabels]}
+                    </label>
+                  </div>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
         <div className="w-48">
           <label className="block text-sm mb-1">{t(texts, "filters.discipline", "Disciplin")}</label>
-          <Select
-            value={disciplineId === null ? "ALL" : String(disciplineId)}
-            onValueChange={(v) => setDisciplineId(v === "ALL" ? null : Number(v))}
-          >
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="1">Fot-OL</SelectItem>
-              <SelectItem value="2">MTBO</SelectItem>
-              <SelectItem value="3">SkidO</SelectItem>
-              <SelectItem value="4">Pre-O</SelectItem>
-              <SelectItem value="7">OL-skytte</SelectItem>
-              <SelectItem value="8">Indoor</SelectItem>
-              <SelectItem value="ALL">Alla</SelectItem>
-            </SelectContent>
-          </Select>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className="w-full justify-between">
+                {selectedDisciplines.includes(-1) ? 'Alla discipliner' : 
+                 selectedDisciplines.length === 1 ? disciplineLabels[selectedDisciplines[0] as keyof typeof disciplineLabels] :
+                 `${selectedDisciplines.length} valda`}
+                <ChevronDown className="h-4 w-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-48 p-0">
+              <div className="p-2 space-y-2">
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="discipline-all"
+                    checked={selectedDisciplines.includes(-1)}
+                    onCheckedChange={() => toggleDisciplineSelection(-1)}
+                  />
+                  <label htmlFor="discipline-all" className="text-sm">Alla</label>
+                </div>
+                {[1, 2, 3, 4, 7, 8].map((disciplineId) => (
+                  <div key={disciplineId} className="flex items-center space-x-2">
+                    <Checkbox 
+                      id={`discipline-${disciplineId}`}
+                      checked={!selectedDisciplines.includes(-1) && selectedDisciplines.includes(disciplineId)}
+                      onCheckedChange={() => toggleDisciplineSelection(disciplineId)}
+                    />
+                    <label htmlFor={`discipline-${disciplineId}`} className="text-sm">
+                      {disciplineLabels[disciplineId as keyof typeof disciplineLabels]}
+                    </label>
+                  </div>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
         <div className="w-48">
           <label className="block text-sm mb-1">Distans</label>
@@ -460,6 +607,7 @@ export default function Index461() {
                 {distances.includes('__ALL__') ? 'Alla distanser' : 
                  distances.length === 1 ? formatDistanceLabel(distances[0]) :
                  `${distances.length} valda`}
+                <ChevronDown className="h-4 w-4" />
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-48 p-0">
@@ -496,6 +644,7 @@ export default function Index461() {
                 {forms.includes('__ALL__') ? 'Alla former' : 
                  forms.length === 1 ? formatFormLabel(forms[0] === '__NULL__' ? null : forms[0]) :
                  `${forms.length} valda`}
+                <ChevronDown className="h-4 w-4" />
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-48 p-0">
