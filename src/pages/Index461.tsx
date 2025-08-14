@@ -12,6 +12,8 @@ import { useAppTexts, t } from "@/hooks/useAppTexts";
 import { formatSecondsToHMS } from "@/lib/utils";
 import { hasSupabaseConfig, getProxyBaseUrl } from "@/lib/config";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 const CLUB_ID = 461;
 
 type Result = {
@@ -75,25 +77,42 @@ function useResults(params: {
   onlyChampionship?: boolean | null;
   ageMin?: number | null;
   ageMax?: number | null;
+  distances?: string[];
+  forms?: string[];
 }) {
-  const { club, year, gender, disciplineId = null, onlyChampionship = null, ageMin = null, ageMax = null } = params;
+  const { club, year, gender, disciplineId = null, onlyChampionship = null, ageMin = null, ageMax = null, distances = ['__ALL__'], forms = ['__ALL__'] } = params;
   return useQuery<Result[]>({
-    queryKey: ["results_v2", club, year, gender, disciplineId, onlyChampionship, ageMin, ageMax],
+    queryKey: ["results_v2", club, year, gender, disciplineId, onlyChampionship, ageMin, ageMax, distances, forms],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .rpc("get_results_filtered_v2", {
-          _club: club,
-          _year: year,
-          _gender: gender,
-          _discipline_id: disciplineId,
-          _only_championship: onlyChampionship,
-          _age_min: ageMin,
-          _age_max: ageMax,
-          _limit: 500,
-          _offset: 0,
-        });
+      const { data, error } = await supabase.rpc("rpc_results_enriched", {
+        _club: club,
+        _year: year,
+        _gender: gender,
+        _age_min: ageMin,
+        _age_max: ageMax,
+        _only_championship: onlyChampionship,
+        _personid: null,
+        _limit: 500,
+        _offset: 0,
+      });
       if (error) throw error;
-      return ((data ?? []) as Result[]);
+      
+      let results = ((data ?? []) as Result[]);
+      
+      // Apply distance filter
+      if (!distances.includes('__ALL__')) {
+        results = results.filter(r => r.eventdistance && distances.includes(r.eventdistance));
+      }
+      
+      // Apply form filter
+      if (!forms.includes('__ALL__')) {
+        results = results.filter(r => {
+          if (forms.includes('__NULL__') && r.eventform === null) return true;
+          return r.eventform && forms.includes(r.eventform);
+        });
+      }
+      
+      return results;
     },
   });
 }
@@ -220,8 +239,61 @@ export default function Index461() {
   }, [years]);
   const [gender, setGender] = useState<string>("Alla");
   const [disciplineId, setDisciplineId] = useState<number | null>(1); // Default to Fot-OL
+  const [distances, setDistances] = useState<string[]>(['__ALL__']);
+  const [forms, setForms] = useState<string[]>(['__ALL__']);
 
   const { data: clubName = "" } = useClubName(CLUB_ID);
+
+  // Translation mappings
+  const distanceLabels = {
+    'Long': 'Lång',
+    'Middle': 'Medel', 
+    'Sprint': 'Sprint'
+  };
+
+  const formLabels = {
+    'RelaySingleDay': 'Stafett',
+    'IndMultiDay': 'Flerdagars',
+    '__NULL__': 'Individuell'
+  };
+
+  // Multi-select helper functions
+  const toggleDistanceSelection = (distance: string) => {
+    if (distance === '__ALL__') {
+      setDistances(['__ALL__']);
+    } else {
+      const newDistances = distances.includes('__ALL__') 
+        ? [distance]
+        : distances.includes(distance)
+          ? distances.filter(d => d !== distance)
+          : [...distances, distance];
+      
+      setDistances(newDistances.length === 0 ? ['__ALL__'] : newDistances);
+    }
+  };
+
+  const toggleFormSelection = (form: string) => {
+    if (form === '__ALL__') {
+      setForms(['__ALL__']);
+    } else {
+      const newForms = forms.includes('__ALL__')
+        ? [form]
+        : forms.includes(form)
+          ? forms.filter(f => f !== form)
+          : [...forms, form];
+      
+      setForms(newForms.length === 0 ? ['__ALL__'] : newForms);
+    }
+  };
+
+  const formatDistanceLabel = (distance: string) => {
+    return distanceLabels[distance as keyof typeof distanceLabels] || distance;
+  };
+
+  const formatFormLabel = (form: string | null) => {
+    if (form === null) return formLabels['__NULL__'];
+    return formLabels[form as keyof typeof formLabels] || form;
+  };
 
   // Base filtered results for common filters
   const { data: baseResults = [], isLoading } = useResults({
@@ -229,6 +301,8 @@ export default function Index461() {
     year: year ?? null,
     gender: gender,
     disciplineId: disciplineId,
+    distances: distances,
+    forms: forms,
   });
 
   // Derived datasets for each table
@@ -378,6 +452,78 @@ export default function Index461() {
             </SelectContent>
           </Select>
         </div>
+        <div className="w-48">
+          <label className="block text-sm mb-1">Distans</label>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className="w-full justify-between">
+                {distances.includes('__ALL__') ? 'Alla distanser' : 
+                 distances.length === 1 ? formatDistanceLabel(distances[0]) :
+                 `${distances.length} valda`}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-48 p-0">
+              <div className="p-2 space-y-2">
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="distance-all"
+                    checked={distances.includes('__ALL__')}
+                    onCheckedChange={() => toggleDistanceSelection('__ALL__')}
+                  />
+                  <label htmlFor="distance-all" className="text-sm">Alla</label>
+                </div>
+                {['Long', 'Middle', 'Sprint'].map((dist) => (
+                  <div key={dist} className="flex items-center space-x-2">
+                    <Checkbox 
+                      id={`distance-${dist}`}
+                      checked={!distances.includes('__ALL__') && distances.includes(dist)}
+                      onCheckedChange={() => toggleDistanceSelection(dist)}
+                    />
+                    <label htmlFor={`distance-${dist}`} className="text-sm">
+                      {formatDistanceLabel(dist)}
+                    </label>
+                  </div>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+        <div className="w-48">
+          <label className="block text-sm mb-1">Tävlingsform</label>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className="w-full justify-between">
+                {forms.includes('__ALL__') ? 'Alla former' : 
+                 forms.length === 1 ? formatFormLabel(forms[0] === '__NULL__' ? null : forms[0]) :
+                 `${forms.length} valda`}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-48 p-0">
+              <div className="p-2 space-y-2">
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="form-all"
+                    checked={forms.includes('__ALL__')}
+                    onCheckedChange={() => toggleFormSelection('__ALL__')}
+                  />
+                  <label htmlFor="form-all" className="text-sm">Alla</label>
+                </div>
+                {['RelaySingleDay', 'IndMultiDay', '__NULL__'].map((form) => (
+                  <div key={form} className="flex items-center space-x-2">
+                    <Checkbox 
+                      id={`form-${form}`}
+                      checked={!forms.includes('__ALL__') && forms.includes(form)}
+                      onCheckedChange={() => toggleFormSelection(form)}
+                    />
+                    <label htmlFor={`form-${form}`} className="text-sm">
+                      {formatFormLabel(form === '__NULL__' ? null : form)}
+                    </label>
+                  </div>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
       </section>
 
       {/* Tables */}
@@ -493,7 +639,7 @@ export default function Index461() {
                   <TableRow key={`${r.eventraceid}-${r.personid}`}>
                     <TableCell>{new Date(r.eventdate).toISOString().slice(0, 10)}</TableCell>
                     <TableCell>{r.eventname}</TableCell>
-                    <TableCell>{r.eventform ?? ""}</TableCell>
+                    <TableCell>{formatFormLabel(r.eventform)}</TableCell>
                     <TableCell>{r.eventclassname ?? ""}</TableCell>
                     <TableCell>{r.classtypeid ?? ""}</TableCell>
                     <TableCell>{r.klassfaktor ?? ""}</TableCell>
