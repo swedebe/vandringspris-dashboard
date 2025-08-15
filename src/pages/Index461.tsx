@@ -85,15 +85,12 @@ function useResults(params: {
   return useQuery<Result[]>({
     queryKey: ["results_v2", club, years, genders, disciplineIds, onlyChampionship, ageMin, ageMax, distances, forms],
     queryFn: async () => {
-      // Use first year if years array provided, otherwise null
-      const year = years.length > 0 && !years.includes(-1) ? years[0] : null;
-      // Use first gender if genders array provided and not "all", otherwise "Alla"
-      const gender = genders.includes('__ALL__') ? 'Alla' : genders[0] || 'Alla';
-      
+      // Always use 'Alla' for gender and null for year at RPC level to get all data
+      // Then filter client-side for multi-select functionality
       const { data, error } = await supabase.rpc("rpc_results_enriched", {
         _club: club,
-        _year: year,
-        _gender: gender,
+        _year: null,
+        _gender: 'Alla',
         _age_min: ageMin,
         _age_max: ageMax,
         _only_championship: onlyChampionship,
