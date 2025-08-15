@@ -146,11 +146,126 @@ function useResults(params: {
 function groupByPerson(results: Result[]) {
   const map = new Map<number, { name: string; items: Result[] }>();
   for (const r of results) {
-    const name = `${r.personnamegiven ?? ""} ${r.personnamefamily ?? ""}`.trim();
+    // Show names from the view, fallback to '-' if both null
+    const given = r.personnamegiven || '';
+    const family = r.personnamefamily || '';
+    const name = given || family ? `${given} ${family}`.trim() : '-';
     if (!map.has(r.personid)) map.set(r.personid, { name, items: [] });
     map.get(r.personid)!.items.push(r);
   }
   return map;
+}
+
+// Hook for total competitions count using the new RPC
+function useCompetitionsTotal(params: {
+  years?: number[];
+  genders?: string[];
+  disciplineIds?: number[];
+  distances?: string[];
+  forms?: string[];
+}) {
+  const { years = [], genders = ['__ALL__'], disciplineIds = [], distances = ['__ALL__'], forms = ['__ALL__'] } = params;
+  return useQuery<number>({
+    queryKey: ["rpc_index461_events_total", years, genders, disciplineIds, distances, forms],
+    queryFn: async () => {
+      const rpcParams: any = {};
+
+      // Build same parameters as main query
+      if (!years.includes(-1) && years.length > 0) {
+        rpcParams.years = years.filter(y => y !== -1);
+      }
+      
+      if (!distances.includes('__ALL__') && distances.length > 0) {
+        const distanceMap: { [key: string]: string } = {
+          'Lång': 'Long',
+          'Medel': 'Middle', 
+          'Sprint': 'Sprint'
+        };
+        rpcParams.distances = distances.map(d => distanceMap[d] || d);
+      }
+      
+      if (!forms.includes('__ALL__') && forms.length > 0) {
+        const formMap: { [key: string]: string } = {
+          'Stafett': 'RelaySingleDay',
+          'Flerdagars': 'IndMultiDay',
+          'Individuell': '__NULL__'
+        };
+        rpcParams.form_groups = forms.map(f => formMap[f] || f);
+      }
+      
+      if (!disciplineIds.includes(-1) && disciplineIds.length > 0) {
+        rpcParams.discipline_ids = disciplineIds.filter(id => id !== -1);
+      }
+      
+      if (!genders.includes('__ALL__') && genders.length > 0) {
+        const genderMap: { [key: string]: string } = {
+          'Damer': 'F',
+          'Herrar': 'M'
+        };
+        rpcParams.genders = genders.map(g => genderMap[g] || g).filter(g => g !== '__ALL__');
+      }
+
+      const { data, error } = await supabase.rpc('rpc_index461_events_total', rpcParams);
+      if (error) throw error;
+      return data as number;
+    },
+  });
+}
+
+// Hook for competitions count by year
+function useCompetitionsByYear(params: {
+  years?: number[];
+  genders?: string[];
+  disciplineIds?: number[];
+  distances?: string[];
+  forms?: string[];
+}) {
+  const { years = [], genders = ['__ALL__'], disciplineIds = [], distances = ['__ALL__'], forms = ['__ALL__'] } = params;
+  return useQuery<{ eventyear: number; events_count: number }[]>({
+    queryKey: ["rpc_index461_events_by_year", years, genders, disciplineIds, distances, forms],
+    queryFn: async () => {
+      const rpcParams: any = {};
+
+      // Build same parameters as main query
+      if (!years.includes(-1) && years.length > 0) {
+        rpcParams.years = years.filter(y => y !== -1);
+      }
+      
+      if (!distances.includes('__ALL__') && distances.length > 0) {
+        const distanceMap: { [key: string]: string } = {
+          'Lång': 'Long',
+          'Medel': 'Middle', 
+          'Sprint': 'Sprint'
+        };
+        rpcParams.distances = distances.map(d => distanceMap[d] || d);
+      }
+      
+      if (!forms.includes('__ALL__') && forms.length > 0) {
+        const formMap: { [key: string]: string } = {
+          'Stafett': 'RelaySingleDay',
+          'Flerdagars': 'IndMultiDay',
+          'Individuell': '__NULL__'
+        };
+        rpcParams.form_groups = forms.map(f => formMap[f] || f);
+      }
+      
+      if (!disciplineIds.includes(-1) && disciplineIds.length > 0) {
+        rpcParams.discipline_ids = disciplineIds.filter(id => id !== -1);
+      }
+      
+      if (!genders.includes('__ALL__') && genders.length > 0) {
+        const genderMap: { [key: string]: string } = {
+          'Damer': 'F',
+          'Herrar': 'M'
+        };
+        rpcParams.genders = genders.map(g => genderMap[g] || g).filter(g => g !== '__ALL__');
+      }
+
+      const { data, error } = await supabase.rpc('rpc_index461_events_by_year', rpcParams);
+      if (error) throw error;
+      return data as { eventyear: number; events_count: number }[];
+    },
+  });
 }
 
 function sumTopN(points: (number | null)[], n: number) {
@@ -379,6 +494,23 @@ export default function Index461() {
   // Base filtered results for common filters
   const { data: baseResults = [], isLoading } = useResults({
     club: CLUB_ID,
+    years: selectedYears,
+    genders: selectedGenders,
+    disciplineIds: selectedDisciplines,
+    distances: distances,
+    forms: forms,
+  });
+
+  // Competitions count data
+  const { data: totalCompetitions = 0 } = useCompetitionsTotal({
+    years: selectedYears,
+    genders: selectedGenders,
+    disciplineIds: selectedDisciplines,
+    distances: distances,
+    forms: forms,
+  });
+
+  const { data: competitionsByYear = [] } = useCompetitionsByYear({
     years: selectedYears,
     genders: selectedGenders,
     disciplineIds: selectedDisciplines,
@@ -670,6 +802,35 @@ export default function Index461() {
             </PopoverContent>
           </Popover>
         </div>
+      </section>
+
+      {/* Competitions Count */}
+      <section className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Antal tävlingar</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <div className="text-lg font-semibold">
+                Totalt: {totalCompetitions} tävlingar
+              </div>
+              {competitionsByYear.length > 0 && (
+                <div className="text-sm text-muted-foreground">
+                  <span>Per år: </span>
+                  {competitionsByYear
+                    .sort((a, b) => b.eventyear - a.eventyear)
+                    .map((item, index) => (
+                      <span key={item.eventyear}>
+                        {index > 0 && ', '}
+                        {item.eventyear}: {item.events_count}
+                      </span>
+                    ))}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
       </section>
 
       {/* Tables */}
