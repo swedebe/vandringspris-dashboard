@@ -78,7 +78,7 @@ function useClubName(clubId: number) {
 function useResults(params: {
   club: number | null;
   year?: number | null;
-  genders?: string[];
+  gender?: string;
   disciplineIds?: number[];
   onlyChampionship?: boolean | null;
   ageMin?: number | null;
@@ -86,9 +86,9 @@ function useResults(params: {
   distances?: string[];
   forms?: string[];
 }) {
-  const { club, year = null, genders = ['__ALL__'], disciplineIds = [], onlyChampionship = null, ageMin = null, ageMax = null, distances = ['__ALL__'], forms = ['__ALL__'] } = params;
+  const { club, year = null, gender = '__ALL__', disciplineIds = [], onlyChampionship = null, ageMin = null, ageMax = null, distances = ['__ALL__'], forms = ['__ALL__'] } = params;
   return useQuery<Result[]>({
-    queryKey: ["rpc_index461", club, year, genders, disciplineIds, onlyChampionship, ageMin, ageMax, distances, forms],
+    queryKey: ["rpc_index461", club, year, gender, disciplineIds, onlyChampionship, ageMin, ageMax, distances, forms],
     queryFn: async () => {
       // Build RPC parameters for server-side filtering
       const rpcParams: any = {
@@ -126,13 +126,16 @@ function useResults(params: {
         rpcParams.discipline_ids = disciplineIds.filter(id => id !== -1);
       }
 
-      // Genders filter - map UI values to database values
-      if (!genders.includes('__ALL__') && genders.length > 0) {
+      // Gender filter - map UI value to database value
+      if (gender !== '__ALL__') {
         const genderMap: { [key: string]: string } = {
           'Damer': 'F',
           'Herrar': 'M'
         };
-        rpcParams.genders = genders.map(g => genderMap[g] || g).filter(g => g !== '__ALL__');
+        const mappedGender = genderMap[gender] || gender;
+        if (mappedGender !== '__ALL__') {
+          rpcParams.genders = [mappedGender];
+        }
       }
 
       const { data, error } = await supabase.rpc('rpc_index461', rpcParams);
@@ -159,14 +162,14 @@ function groupByPerson(results: Result[]) {
 // Hook for total competitions count using the new RPC
 function useCompetitionsTotal(params: {
   year?: number | null;
-  genders?: string[];
+  gender?: string;
   disciplineIds?: number[];
   distances?: string[];
   forms?: string[];
 }) {
-  const { year = null, genders = ['__ALL__'], disciplineIds = [], distances = ['__ALL__'], forms = ['__ALL__'] } = params;
+  const { year = null, gender = '__ALL__', disciplineIds = [], distances = ['__ALL__'], forms = ['__ALL__'] } = params;
   return useQuery<number>({
-    queryKey: ["rpc_index461_events_total", year, genders, disciplineIds, distances, forms],
+    queryKey: ["rpc_index461_events_total", year, gender, disciplineIds, distances, forms],
     queryFn: async () => {
       const rpcParams: any = {};
 
@@ -197,12 +200,15 @@ function useCompetitionsTotal(params: {
         rpcParams.discipline_ids = disciplineIds.filter(id => id !== -1);
       }
       
-      if (!genders.includes('__ALL__') && genders.length > 0) {
+      if (gender !== '__ALL__') {
         const genderMap: { [key: string]: string } = {
           'Damer': 'F',
           'Herrar': 'M'
         };
-        rpcParams.genders = genders.map(g => genderMap[g] || g).filter(g => g !== '__ALL__');
+        const mappedGender = genderMap[gender] || gender;
+        if (mappedGender !== '__ALL__') {
+          rpcParams.genders = [mappedGender];
+        }
       }
 
       const { data, error } = await supabase.rpc('rpc_index461_events_total', rpcParams);
@@ -215,14 +221,14 @@ function useCompetitionsTotal(params: {
 // Hook for competitions count by year (not needed for single year, but keeping for consistency)
 function useCompetitionsByYear(params: {
   year?: number | null;
-  genders?: string[];
+  gender?: string;
   disciplineIds?: number[];
   distances?: string[];
   forms?: string[];
 }) {
-  const { year = null, genders = ['__ALL__'], disciplineIds = [], distances = ['__ALL__'], forms = ['__ALL__'] } = params;
+  const { year = null, gender = '__ALL__', disciplineIds = [], distances = ['__ALL__'], forms = ['__ALL__'] } = params;
   return useQuery<{ eventyear: number; events_count: number }[]>({
-    queryKey: ["rpc_index461_events_by_year", year, genders, disciplineIds, distances, forms],
+    queryKey: ["rpc_index461_events_by_year", year, gender, disciplineIds, distances, forms],
     queryFn: async () => {
       const rpcParams: any = {};
 
@@ -253,12 +259,15 @@ function useCompetitionsByYear(params: {
         rpcParams.discipline_ids = disciplineIds.filter(id => id !== -1);
       }
       
-      if (!genders.includes('__ALL__') && genders.length > 0) {
+      if (gender !== '__ALL__') {
         const genderMap: { [key: string]: string } = {
           'Damer': 'F',
           'Herrar': 'M'
         };
-        rpcParams.genders = genders.map(g => genderMap[g] || g).filter(g => g !== '__ALL__');
+        const mappedGender = genderMap[gender] || gender;
+        if (mappedGender !== '__ALL__') {
+          rpcParams.genders = [mappedGender];
+        }
       }
 
       const { data, error } = await supabase.rpc('rpc_index461_events_by_year', rpcParams);
@@ -367,7 +376,7 @@ export default function Index461() {
 
   const { data: years = [] } = useYears(CLUB_ID);
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
-  const [selectedGenders, setSelectedGenders] = useState<string[]>(['__ALL__']);
+  const [selectedGender, setSelectedGender] = useState<string>('__ALL__');
   const [selectedDisciplines, setSelectedDisciplines] = useState<number[]>([1]); // Default to Fot-OL
   const [distances, setDistances] = useState<string[]>(['__ALL__']);
   const [forms, setForms] = useState<string[]>(['__ALL__']);
@@ -415,18 +424,9 @@ export default function Index461() {
     setSelectedYear(year);
   };
 
-  const toggleGenderSelection = (gender: string) => {
-    if (gender === '__ALL__') {
-      setSelectedGenders(['__ALL__']);
-    } else {
-      const newGenders = selectedGenders.includes('__ALL__') 
-        ? [gender]
-        : selectedGenders.includes(gender)
-          ? selectedGenders.filter(g => g !== gender)
-          : [...selectedGenders, gender];
-      
-      setSelectedGenders(newGenders.length === 0 ? ['__ALL__'] : newGenders);
-    }
+  // Gender selection (single select)
+  const handleGenderSelection = (gender: string) => {
+    setSelectedGender(gender);
   };
 
   const toggleDisciplineSelection = (disciplineId: number) => {
@@ -484,7 +484,7 @@ export default function Index461() {
   const { data: baseResults = [], isLoading } = useResults({
     club: CLUB_ID,
     year: selectedYear,
-    genders: selectedGenders,
+    gender: selectedGender,
     disciplineIds: selectedDisciplines,
     distances: distances,
     forms: forms,
@@ -493,7 +493,7 @@ export default function Index461() {
   // Competitions count data
   const { data: totalCompetitions = 0 } = useCompetitionsTotal({
     year: selectedYear,
-    genders: selectedGenders,
+    gender: selectedGender,
     disciplineIds: selectedDisciplines,
     distances: distances,
     forms: forms,
@@ -501,7 +501,7 @@ export default function Index461() {
 
   const { data: competitionsByYear = [] } = useCompetitionsByYear({
     year: selectedYear,
-    genders: selectedGenders,
+    gender: selectedGender,
     disciplineIds: selectedDisciplines,
     distances: distances,
     forms: forms,
@@ -628,40 +628,19 @@ export default function Index461() {
         </div>
         <div className="w-48">
           <label className="block text-sm mb-1">{t(texts, "filters.gender", "Kön")}</label>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="outline" className="w-full justify-between">
-                {selectedGenders.includes('__ALL__') ? 'Alla kön' : 
-                 selectedGenders.length === 1 ? genderLabels[selectedGenders[0] as keyof typeof genderLabels] :
-                 `${selectedGenders.length} valda`}
-                <ChevronDown className="h-4 w-4" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-48 p-0">
-              <div className="p-2 space-y-2">
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="gender-all"
-                    checked={selectedGenders.includes('__ALL__')}
-                    onCheckedChange={() => toggleGenderSelection('__ALL__')}
-                  />
-                  <label htmlFor="gender-all" className="text-sm">Alla</label>
-                </div>
-                {['Damer', 'Herrar'].map((gender) => (
-                  <div key={gender} className="flex items-center space-x-2">
-                    <Checkbox 
-                      id={`gender-${gender}`}
-                      checked={!selectedGenders.includes('__ALL__') && selectedGenders.includes(gender)}
-                      onCheckedChange={() => toggleGenderSelection(gender)}
-                    />
-                    <label htmlFor={`gender-${gender}`} className="text-sm">
-                      {genderLabels[gender as keyof typeof genderLabels]}
-                    </label>
-                  </div>
-                ))}
-              </div>
-            </PopoverContent>
-          </Popover>
+          <Select 
+            value={selectedGender} 
+            onValueChange={handleGenderSelection}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Välj kön" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__ALL__">Alla</SelectItem>
+              <SelectItem value="Damer">Damer</SelectItem>
+              <SelectItem value="Herrar">Herrar</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <div className="w-48">
           <label className="block text-sm mb-1">{t(texts, "filters.discipline", "Disciplin")}</label>
