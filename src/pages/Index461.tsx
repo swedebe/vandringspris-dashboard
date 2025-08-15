@@ -88,71 +88,57 @@ function useResults(params: {
 }) {
   const { club, years = [], genders = ['__ALL__'], disciplineIds = [], onlyChampionship = null, ageMin = null, ageMax = null, distances = ['__ALL__'], forms = ['__ALL__'] } = params;
   return useQuery<Result[]>({
-    queryKey: ["results_enriched", club, years, genders, disciplineIds, onlyChampionship, ageMin, ageMax, distances, forms],
+    queryKey: ["rpc_index461", club, years, genders, disciplineIds, onlyChampionship, ageMin, ageMax, distances, forms],
     queryFn: async () => {
-      // Build parameters for RPC call
+      // Build RPC parameters for server-side filtering
       const rpcParams: any = {
-        _club: club,
-        _year: null, // We'll handle multiple years differently
-        _gender: genders.includes('__ALL__') ? 'Alla' : null,
-        _age_min: ageMin,
-        _age_max: ageMax,
-        _only_championship: onlyChampionship,
-        _personid: null,
-        _limit: 500,
-        _offset: 0
+        limit_rows: 500,
+        offset_rows: 0
       };
 
-      // Handle gender filter
-      if (!genders.includes('__ALL__')) {
-        if (genders.includes('Damer') && genders.includes('Herrar')) {
-          rpcParams._gender = 'Alla';
-        } else if (genders.includes('Damer')) {
-          rpcParams._gender = 'Damer';
-        } else if (genders.includes('Herrar')) {
-          rpcParams._gender = 'Herrar';
-        }
-      } else {
-        rpcParams._gender = 'Alla';
+      // Years filter - convert to numbers, exclude "All years" (-1)
+      if (!years.includes(-1) && years.length > 0) {
+        rpcParams.years = years.filter(y => y !== -1);
       }
 
-      const { data, error } = await supabase.rpc('rpc_results_enriched', rpcParams);
+      // Distances filter - map UI values to database values
+      if (!distances.includes('__ALL__') && distances.length > 0) {
+        const distanceMap: { [key: string]: string } = {
+          'Lång': 'Long',
+          'Medel': 'Middle', 
+          'Sprint': 'Sprint'
+        };
+        rpcParams.distances = distances.map(d => distanceMap[d] || d);
+      }
+
+      // Forms filter - map UI values to database values
+      if (!forms.includes('__ALL__') && forms.length > 0) {
+        const formMap: { [key: string]: string } = {
+          'Stafett': 'RelaySingleDay',
+          'Flerdagars': 'IndMultiDay',
+          'Individuell': '__NULL__'
+        };
+        rpcParams.form_groups = forms.map(f => formMap[f] || f);
+      }
+
+      // Disciplines filter
+      if (!disciplineIds.includes(-1) && disciplineIds.length > 0) {
+        rpcParams.discipline_ids = disciplineIds.filter(id => id !== -1);
+      }
+
+      // Genders filter - map UI values to database values
+      if (!genders.includes('__ALL__') && genders.length > 0) {
+        const genderMap: { [key: string]: string } = {
+          'Damer': 'F',
+          'Herrar': 'M'
+        };
+        rpcParams.genders = genders.map(g => genderMap[g] || g).filter(g => g !== '__ALL__');
+      }
+
+      const { data, error } = await supabase.rpc('rpc_index461', rpcParams);
       if (error) throw error;
 
-      let results = data as Result[];
-
-      // Client-side filtering for multi-select fields that RPC doesn't handle
-      
-      // Year filter
-      if (!years.includes(-1) && years.length > 0) {
-        results = results.filter(r => {
-          if (!r.eventdate) return false;
-          const eventYear = new Date(r.eventdate).getFullYear();
-          return years.includes(eventYear);
-        });
-      }
-
-      // Discipline filter
-      if (!disciplineIds.includes(-1) && disciplineIds.length > 0) {
-        results = results.filter(r => disciplineIds.includes(r.disciplineid || 0));
-      }
-
-      // Distance filter
-      if (!distances.includes('__ALL__')) {
-        results = results.filter(r => distances.includes(r.eventdistance || ''));
-      }
-
-      // Form filter
-      if (!forms.includes('__ALL__')) {
-        results = results.filter(r => {
-          if (forms.includes('__NULL__') && !r.eventform) return true;
-          if (forms.includes('RelaySingleDay') && r.eventform === 'RelaySingleDay') return true;
-          if (forms.includes('IndMultiDay') && r.eventform === 'IndMultiDay') return true;
-          return false;
-        });
-      }
-
-      return results;
+      return data as Result[];
     },
   });
 }
