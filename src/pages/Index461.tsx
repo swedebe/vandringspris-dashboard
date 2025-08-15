@@ -88,65 +88,71 @@ function useResults(params: {
 }) {
   const { club, years = [], genders = ['__ALL__'], disciplineIds = [], onlyChampionship = null, ageMin = null, ageMax = null, distances = ['__ALL__'], forms = ['__ALL__'] } = params;
   return useQuery<Result[]>({
-    queryKey: ["results_index461", club, years, genders, disciplineIds, onlyChampionship, ageMin, ageMax, distances, forms],
+    queryKey: ["results_enriched", club, years, genders, disciplineIds, onlyChampionship, ageMin, ageMax, distances, forms],
     queryFn: async () => {
-      let query = supabase.from('results_index461').select('*');
-      
-      // Club filter
-      if (club !== null) {
-        query = query.eq('clubparticipation', club);
-      }
-      
-      // Year filter - use eventyear column
-      if (!years.includes(-1) && years.length > 0) {
-        query = query.in('eventyear', years);
-      }
-      
-      // Gender filter - use personsex column
+      // Build parameters for RPC call
+      const rpcParams: any = {
+        _club: club,
+        _year: null, // We'll handle multiple years differently
+        _gender: genders.includes('__ALL__') ? 'Alla' : null,
+        _age_min: ageMin,
+        _age_max: ageMax,
+        _only_championship: onlyChampionship,
+        _personid: null,
+        _limit: 500,
+        _offset: 0
+      };
+
+      // Handle gender filter
       if (!genders.includes('__ALL__')) {
-        const genderValues = [];
-        if (genders.includes('Damer')) genderValues.push('F');
-        if (genders.includes('Herrar')) genderValues.push('M');
-        if (genderValues.length > 0) {
-          query = query.in('personsex', genderValues);
+        if (genders.includes('Damer') && genders.includes('Herrar')) {
+          rpcParams._gender = 'Alla';
+        } else if (genders.includes('Damer')) {
+          rpcParams._gender = 'Damer';
+        } else if (genders.includes('Herrar')) {
+          rpcParams._gender = 'Herrar';
         }
+      } else {
+        rpcParams._gender = 'Alla';
       }
+
+      const { data, error } = await supabase.rpc('rpc_results_enriched', rpcParams);
+      if (error) throw error;
+
+      let results = data as Result[];
+
+      // Client-side filtering for multi-select fields that RPC doesn't handle
       
+      // Year filter
+      if (!years.includes(-1) && years.length > 0) {
+        results = results.filter(r => {
+          if (!r.eventdate) return false;
+          const eventYear = new Date(r.eventdate).getFullYear();
+          return years.includes(eventYear);
+        });
+      }
+
       // Discipline filter
       if (!disciplineIds.includes(-1) && disciplineIds.length > 0) {
-        query = query.in('disciplineid', disciplineIds);
+        results = results.filter(r => disciplineIds.includes(r.disciplineid || 0));
       }
-      
+
       // Distance filter
       if (!distances.includes('__ALL__')) {
-        query = query.in('eventdistance', distances);
+        results = results.filter(r => distances.includes(r.eventdistance || ''));
       }
-      
-      // Form filter with eventform_group for NULL handling
+
+      // Form filter
       if (!forms.includes('__ALL__')) {
-        query = query.in('eventform_group', forms);
+        results = results.filter(r => {
+          if (forms.includes('__NULL__') && !r.eventform) return true;
+          if (forms.includes('RelaySingleDay') && r.eventform === 'RelaySingleDay') return true;
+          if (forms.includes('IndMultiDay') && r.eventform === 'IndMultiDay') return true;
+          return false;
+        });
       }
-      
-      // Championship filter
-      if (onlyChampionship === true) {
-        query = query.eq('eventclassificationid', 1);
-      }
-      
-      // Age filters
-      if (ageMin !== null) {
-        query = query.gte('personage', ageMin);
-      }
-      if (ageMax !== null) {
-        query = query.lte('personage', ageMax);
-      }
-      
-      // Order and limit
-      query = query.order('eventdate', { ascending: false }).limit(500);
-      
-      const { data, error } = await query;
-      if (error) throw error;
-      
-      return data as Result[];
+
+      return results;
     },
   });
 }
