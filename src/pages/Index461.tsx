@@ -77,7 +77,7 @@ function useClubName(clubId: number) {
 
 function useResults(params: {
   club: number | null;
-  years?: number[];
+  year?: number | null;
   genders?: string[];
   disciplineIds?: number[];
   onlyChampionship?: boolean | null;
@@ -86,9 +86,9 @@ function useResults(params: {
   distances?: string[];
   forms?: string[];
 }) {
-  const { club, years = [], genders = ['__ALL__'], disciplineIds = [], onlyChampionship = null, ageMin = null, ageMax = null, distances = ['__ALL__'], forms = ['__ALL__'] } = params;
+  const { club, year = null, genders = ['__ALL__'], disciplineIds = [], onlyChampionship = null, ageMin = null, ageMax = null, distances = ['__ALL__'], forms = ['__ALL__'] } = params;
   return useQuery<Result[]>({
-    queryKey: ["rpc_index461", club, years, genders, disciplineIds, onlyChampionship, ageMin, ageMax, distances, forms],
+    queryKey: ["rpc_index461", club, year, genders, disciplineIds, onlyChampionship, ageMin, ageMax, distances, forms],
     queryFn: async () => {
       // Build RPC parameters for server-side filtering
       const rpcParams: any = {
@@ -96,9 +96,9 @@ function useResults(params: {
         offset_rows: 0
       };
 
-      // Years filter - convert to numbers, exclude "All years" (-1)
-      if (!years.includes(-1) && years.length > 0) {
-        rpcParams.years = years.filter(y => y !== -1);
+      // Year filter - single year only
+      if (year !== null) {
+        rpcParams.years = [year];
       }
 
       // Distances filter - map UI values to database values
@@ -158,21 +158,21 @@ function groupByPerson(results: Result[]) {
 
 // Hook for total competitions count using the new RPC
 function useCompetitionsTotal(params: {
-  years?: number[];
+  year?: number | null;
   genders?: string[];
   disciplineIds?: number[];
   distances?: string[];
   forms?: string[];
 }) {
-  const { years = [], genders = ['__ALL__'], disciplineIds = [], distances = ['__ALL__'], forms = ['__ALL__'] } = params;
+  const { year = null, genders = ['__ALL__'], disciplineIds = [], distances = ['__ALL__'], forms = ['__ALL__'] } = params;
   return useQuery<number>({
-    queryKey: ["rpc_index461_events_total", years, genders, disciplineIds, distances, forms],
+    queryKey: ["rpc_index461_events_total", year, genders, disciplineIds, distances, forms],
     queryFn: async () => {
       const rpcParams: any = {};
 
       // Build same parameters as main query
-      if (!years.includes(-1) && years.length > 0) {
-        rpcParams.years = years.filter(y => y !== -1);
+      if (year !== null) {
+        rpcParams.years = [year];
       }
       
       if (!distances.includes('__ALL__') && distances.length > 0) {
@@ -212,23 +212,23 @@ function useCompetitionsTotal(params: {
   });
 }
 
-// Hook for competitions count by year
+// Hook for competitions count by year (not needed for single year, but keeping for consistency)
 function useCompetitionsByYear(params: {
-  years?: number[];
+  year?: number | null;
   genders?: string[];
   disciplineIds?: number[];
   distances?: string[];
   forms?: string[];
 }) {
-  const { years = [], genders = ['__ALL__'], disciplineIds = [], distances = ['__ALL__'], forms = ['__ALL__'] } = params;
+  const { year = null, genders = ['__ALL__'], disciplineIds = [], distances = ['__ALL__'], forms = ['__ALL__'] } = params;
   return useQuery<{ eventyear: number; events_count: number }[]>({
-    queryKey: ["rpc_index461_events_by_year", years, genders, disciplineIds, distances, forms],
+    queryKey: ["rpc_index461_events_by_year", year, genders, disciplineIds, distances, forms],
     queryFn: async () => {
       const rpcParams: any = {};
 
       // Build same parameters as main query
-      if (!years.includes(-1) && years.length > 0) {
-        rpcParams.years = years.filter(y => y !== -1);
+      if (year !== null) {
+        rpcParams.years = [year];
       }
       
       if (!distances.includes('__ALL__') && distances.length > 0) {
@@ -366,20 +366,19 @@ export default function Index461() {
   ]);
 
   const { data: years = [] } = useYears(CLUB_ID);
-  const currentUTCYear = new Date().getUTCFullYear();
-  const [selectedYears, setSelectedYears] = useState<number[]>([]);
+  const [selectedYear, setSelectedYear] = useState<number | null>(null);
   const [selectedGenders, setSelectedGenders] = useState<string[]>(['__ALL__']);
   const [selectedDisciplines, setSelectedDisciplines] = useState<number[]>([1]); // Default to Fot-OL
   const [distances, setDistances] = useState<string[]>(['__ALL__']);
   const [forms, setForms] = useState<string[]>(['__ALL__']);
 
-  // Ensure default becomes the highest available year when data arrives.
+  // Set default to the latest available year when data arrives
   useEffect(() => {
-    if (years.length && selectedYears.length === 0) {
+    if (years.length && selectedYear === null) {
       const maxYear = Math.max(...years);
-      setSelectedYears([maxYear]);
+      setSelectedYear(maxYear);
     }
-  }, [years, selectedYears.length]);
+  }, [years, selectedYear]);
 
   const { data: clubName = "" } = useClubName(CLUB_ID);
 
@@ -411,19 +410,9 @@ export default function Index461() {
     8: 'Indoor'
   };
 
-  // Multi-select helper functions
-  const toggleYearSelection = (year: number) => {
-    if (year === -1) { // "__ALL__" equivalent for years
-      setSelectedYears([-1]);
-    } else {
-      const newYears = selectedYears.includes(-1) 
-        ? [year]
-        : selectedYears.includes(year)
-          ? selectedYears.filter(y => y !== year)
-          : [...selectedYears, year];
-      
-      setSelectedYears(newYears.length === 0 ? [-1] : newYears);
-    }
+  // Year selection (single select)
+  const handleYearSelection = (year: number) => {
+    setSelectedYear(year);
   };
 
   const toggleGenderSelection = (gender: string) => {
@@ -494,7 +483,7 @@ export default function Index461() {
   // Base filtered results for common filters
   const { data: baseResults = [], isLoading } = useResults({
     club: CLUB_ID,
-    years: selectedYears,
+    year: selectedYear,
     genders: selectedGenders,
     disciplineIds: selectedDisciplines,
     distances: distances,
@@ -503,7 +492,7 @@ export default function Index461() {
 
   // Competitions count data
   const { data: totalCompetitions = 0 } = useCompetitionsTotal({
-    years: selectedYears,
+    year: selectedYear,
     genders: selectedGenders,
     disciplineIds: selectedDisciplines,
     distances: distances,
@@ -511,7 +500,7 @@ export default function Index461() {
   });
 
   const { data: competitionsByYear = [] } = useCompetitionsByYear({
-    years: selectedYears,
+    year: selectedYear,
     genders: selectedGenders,
     disciplineIds: selectedDisciplines,
     distances: distances,
@@ -620,39 +609,22 @@ export default function Index461() {
       {/* Filters */}
       <section className="flex flex-wrap gap-4 items-center">
         <div className="w-48">
-          <label className="block text-sm mb-1">{t(texts, "filters.year", "Årtal")}</label>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="outline" className="w-full justify-between">
-                {selectedYears.includes(-1) ? 'Alla år' : 
-                 selectedYears.length === 1 ? selectedYears[0] :
-                 `${selectedYears.length} valda`}
-                <ChevronDown className="h-4 w-4" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-48 p-0">
-              <div className="p-2 space-y-2">
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="year-all"
-                    checked={selectedYears.includes(-1)}
-                    onCheckedChange={() => toggleYearSelection(-1)}
-                  />
-                  <label htmlFor="year-all" className="text-sm">Alla</label>
-                </div>
-                {years.map((y) => (
-                  <div key={y} className="flex items-center space-x-2">
-                    <Checkbox 
-                      id={`year-${y}`}
-                      checked={!selectedYears.includes(-1) && selectedYears.includes(y)}
-                      onCheckedChange={() => toggleYearSelection(y)}
-                    />
-                    <label htmlFor={`year-${y}`} className="text-sm">{y}</label>
-                  </div>
-                ))}
-              </div>
-            </PopoverContent>
-          </Popover>
+          <label className="block text-sm mb-1">{t(texts, "filters.year", "År")}</label>
+          <Select 
+            value={selectedYear?.toString() || ""} 
+            onValueChange={(value) => handleYearSelection(parseInt(value))}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Välj år" />
+            </SelectTrigger>
+            <SelectContent>
+              {years.map((year) => (
+                <SelectItem key={year} value={year.toString()}>
+                  {year}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="w-48">
           <label className="block text-sm mb-1">{t(texts, "filters.gender", "Kön")}</label>
