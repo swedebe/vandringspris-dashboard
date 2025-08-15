@@ -159,8 +159,8 @@ function groupByPerson(results: Result[]) {
   return map;
 }
 
-// Hook for total competitions count using the new RPC
-function useCompetitionsTotal(params: {
+// Hook for KPI stats using rpc_index461_stats
+function useKPIStats(params: {
   year?: number | null;
   gender?: string;
   disciplineIds?: number[];
@@ -168,14 +168,21 @@ function useCompetitionsTotal(params: {
   forms?: string[];
 }) {
   const { year = null, gender = '__ALL__', disciplineIds = [], distances = ['__ALL__'], forms = ['__ALL__'] } = params;
-  return useQuery<number>({
-    queryKey: ["rpc_index461_events_total", year, gender, disciplineIds, distances, forms],
+  return useQuery<{
+    competitions_with_participation: number;
+    participants_with_start: number;
+    runs_ok: number;
+    runs_didnotstart: number;
+    runs_mispunch: number;
+    runs_other: number;
+  }>({
+    queryKey: ["rpc_index461_stats", year, gender, disciplineIds, distances, forms],
     queryFn: async () => {
       const rpcParams: any = {};
 
       // Build same parameters as main query
       if (year !== null) {
-        rpcParams.years = [year];
+        rpcParams.year = year; // Note: single year for stats RPC
       }
       
       if (!distances.includes('__ALL__') && distances.length > 0) {
@@ -185,6 +192,8 @@ function useCompetitionsTotal(params: {
           'Sprint': 'Sprint'
         };
         rpcParams.distances = distances.map(d => distanceMap[d] || d);
+      } else {
+        rpcParams.distances = [];
       }
       
       if (!forms.includes('__ALL__') && forms.length > 0) {
@@ -194,10 +203,14 @@ function useCompetitionsTotal(params: {
           'Individuell': '__NULL__'
         };
         rpcParams.form_groups = forms.map(f => formMap[f] || f);
+      } else {
+        rpcParams.form_groups = [];
       }
       
       if (!disciplineIds.includes(-1) && disciplineIds.length > 0) {
         rpcParams.discipline_ids = disciplineIds.filter(id => id !== -1);
+      } else {
+        rpcParams.discipline_ids = [];
       }
       
       if (gender !== '__ALL__') {
@@ -208,12 +221,95 @@ function useCompetitionsTotal(params: {
         const mappedGender = genderMap[gender] || gender;
         if (mappedGender !== '__ALL__') {
           rpcParams.genders = [mappedGender];
+        } else {
+          rpcParams.genders = [];
         }
+      } else {
+        rpcParams.genders = [];
       }
 
-      const { data, error } = await supabase.rpc('rpc_index461_events_total', rpcParams);
+      const { data, error } = await supabase.rpc('rpc_index461_stats', rpcParams);
       if (error) throw error;
-      return data as number;
+      return data?.[0] || {
+        competitions_with_participation: 0,
+        participants_with_start: 0,
+        runs_ok: 0,
+        runs_didnotstart: 0,
+        runs_mispunch: 0,
+        runs_other: 0
+      };
+    },
+  });
+}
+
+// Hook for top competitors using rpc_index461_top_competitors  
+function useTopCompetitors(params: {
+  year?: number | null;
+  gender?: string;
+  disciplineIds?: number[];
+  distances?: string[];
+  forms?: string[];
+  limit?: number;
+}) {
+  const { year = null, gender = '__ALL__', disciplineIds = [], distances = ['__ALL__'], forms = ['__ALL__'], limit = 50 } = params;
+  return useQuery<{personid: number; personnamegiven: string; personnamefamily: string; competitions_count: number}[]>({
+    queryKey: ["rpc_index461_top_competitors", year, gender, disciplineIds, distances, forms, limit],
+    queryFn: async () => {
+      const rpcParams: any = {
+        limit_rows: limit
+      };
+
+      // Build same parameters as main query
+      if (year !== null) {
+        rpcParams.year = year; // Note: single year for top competitors RPC
+      }
+      
+      if (!distances.includes('__ALL__') && distances.length > 0) {
+        const distanceMap: { [key: string]: string } = {
+          'Lång': 'Long',
+          'Medel': 'Middle', 
+          'Sprint': 'Sprint'
+        };
+        rpcParams.distances = distances.map(d => distanceMap[d] || d);
+      } else {
+        rpcParams.distances = [];
+      }
+      
+      if (!forms.includes('__ALL__') && forms.length > 0) {
+        const formMap: { [key: string]: string } = {
+          'Stafett': 'RelaySingleDay',
+          'Flerdagars': 'IndMultiDay',
+          'Individuell': '__NULL__'
+        };
+        rpcParams.form_groups = forms.map(f => formMap[f] || f);
+      } else {
+        rpcParams.form_groups = [];
+      }
+      
+      if (!disciplineIds.includes(-1) && disciplineIds.length > 0) {
+        rpcParams.discipline_ids = disciplineIds.filter(id => id !== -1);
+      } else {
+        rpcParams.discipline_ids = [];
+      }
+      
+      if (gender !== '__ALL__') {
+        const genderMap: { [key: string]: string } = {
+          'Damer': 'F',
+          'Herrar': 'M'
+        };
+        const mappedGender = genderMap[gender] || gender;
+        if (mappedGender !== '__ALL__') {
+          rpcParams.genders = [mappedGender];
+        } else {
+          rpcParams.genders = [];
+        }
+      } else {
+        rpcParams.genders = [];
+      }
+
+      const { data, error } = await supabase.rpc('rpc_index461_top_competitors', rpcParams);
+      if (error) throw error;
+      return data || [];
     },
   });
 }
@@ -480,7 +576,7 @@ export default function Index461() {
     return formLabels[form as keyof typeof formLabels] || form;
   };
 
-  // Base filtered results for common filters
+  // Base filtered results for common filters (only OK status for points tables)
   const { data: baseResults = [], isLoading } = useResults({
     club: CLUB_ID,
     year: selectedYear,
@@ -490,13 +586,30 @@ export default function Index461() {
     forms: forms,
   });
 
-  // Competitions count data
-  const { data: totalCompetitions = 0 } = useCompetitionsTotal({
+  // KPI stats data
+  const { data: kpiStats = {
+    competitions_with_participation: 0,
+    participants_with_start: 0,
+    runs_ok: 0,
+    runs_didnotstart: 0,
+    runs_mispunch: 0,
+    runs_other: 0
+  } } = useKPIStats({
     year: selectedYear,
     gender: selectedGender,
     disciplineIds: selectedDisciplines,
     distances: distances,
     forms: forms,
+  });
+
+  // Top competitors data (for "Flest tävlingar" table)
+  const { data: topCompetitors = [] } = useTopCompetitors({
+    year: selectedYear,
+    gender: selectedGender,
+    disciplineIds: selectedDisciplines,
+    distances: distances,
+    forms: forms,
+    limit: 50,
   });
 
   const { data: competitionsByYear = [] } = useCompetitionsByYear({
@@ -509,18 +622,22 @@ export default function Index461() {
 
   // Derived datasets for each table
   const rowsMostRaces = useMemo(() => {
-    const groups = groupByPerson(baseResults);
-    const rows = Array.from(groups.entries()).map(([personid, { name, items }]) => ({
-      personid,
-      name,
-      value: items.length,
-      usedItems: items,
+    // Use the RPC data for most races (includes OK and Mispunch statuses)
+    return topCompetitors.map(competitor => ({
+      personid: competitor.personid,
+      name: `${competitor.personnamegiven || ''} ${competitor.personnamefamily || ''}`.trim() || '-',
+      value: competitor.competitions_count,
+      usedItems: baseResults.filter(r => 
+        r.personid === competitor.personid && 
+        ['OK', 'Mispunch'].includes(r.resultcompetitorstatus || '')
+      ),
     }));
-    return rows.sort((a, b) => b.value - a.value);
-  }, [baseResults]);
+  }, [topCompetitors, baseResults]);
 
   const makeTopPointsRows = (n: number, ageMin: number | null, ageMax: number | null, onlyChampionship?: boolean) => {
     const filtered = baseResults.filter((r) => {
+      // Only include OK status for points calculations
+      if (r.resultcompetitorstatus !== 'OK') return false;
       if (onlyChampionship && r.eventclassificationid !== 1) return false;
       if (ageMin !== null && (r.personage ?? 0) < ageMin) return false;
       if (ageMax !== null && (r.personage ?? 0) > ageMax) return false;
@@ -540,7 +657,9 @@ export default function Index461() {
   };
 
   const rowsMostPointsAll = useMemo(() => {
-    const groups = groupByPerson(baseResults);
+    // Only include OK status for points calculations
+    const filtered = baseResults.filter(r => r.resultcompetitorstatus === 'OK');
+    const groups = groupByPerson(filtered);
     const rows = Array.from(groups.entries()).map(([personid, { name, items }]) => ({
       personid,
       name,
@@ -755,30 +874,35 @@ export default function Index461() {
         </div>
       </section>
 
-      {/* Competitions Count */}
+      {/* KPI Panel */}
       <section className="space-y-4">
         <Card>
-          <CardHeader>
-            <CardTitle>Antal tävlingar</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              <div className="text-lg font-semibold">
-                Totalt: {totalCompetitions} tävlingar
+          <CardContent className="pt-6">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <div className="space-y-1">
+                <div className="text-sm text-muted-foreground">Antal tävlingar med deltagare</div>
+                <div className="text-2xl font-bold">{kpiStats.competitions_with_participation}</div>
               </div>
-              {competitionsByYear.length > 0 && (
-                <div className="text-sm text-muted-foreground">
-                  <span>Per år: </span>
-                  {competitionsByYear
-                    .sort((a, b) => b.eventyear - a.eventyear)
-                    .map((item, index) => (
-                      <span key={item.eventyear}>
-                        {index > 0 && ', '}
-                        {item.eventyear}: {item.events_count}
-                      </span>
-                    ))}
-                </div>
-              )}
+              <div className="space-y-1">
+                <div className="text-sm text-muted-foreground">Antal deltagare med minst 1 start</div>
+                <div className="text-2xl font-bold">{kpiStats.participants_with_start}</div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-sm text-muted-foreground">Antal godkända lopp</div>
+                <div className="text-2xl font-bold">{kpiStats.runs_ok}</div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-sm text-muted-foreground">Antal ej start</div>
+                <div className="text-2xl font-bold">{kpiStats.runs_didnotstart}</div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-sm text-muted-foreground">Antal felstämplade</div>
+                <div className="text-2xl font-bold">{kpiStats.runs_mispunch}</div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-sm text-muted-foreground">Antal övrig status</div>
+                <div className="text-2xl font-bold">{kpiStats.runs_other}</div>
+              </div>
             </div>
           </CardContent>
         </Card>
