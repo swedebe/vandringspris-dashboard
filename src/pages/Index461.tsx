@@ -683,10 +683,227 @@ export default function Index461() {
   const [drillTitle, setDrillTitle] = useState("");
   const [drillItems, setDrillItems] = useState<Result[]>([]);
 
+  // KPI popup states
+  const [kpiDialogOpen, setKpiDialogOpen] = useState(false);
+  const [kpiDialogTitle, setKpiDialogTitle] = useState("");
+  const [kpiDialogData, setKpiDialogData] = useState<any[]>([]);
+  const [kpiDialogType, setKpiDialogType] = useState<string>("");
+
   const openDrill = (title: string, row: { name: string; usedItems?: Result[] }) => {
     setDrillTitle(`${title} – ${row.name}`);
     setDrillItems(row.usedItems ?? []);
     setDrillOpen(true);
+  };
+
+  // KPI data fetching functions
+  const fetchCompetitionsData = async () => {
+    const rpcParams: any = {};
+    
+    if (selectedYear !== null) {
+      rpcParams.years = [selectedYear];
+    }
+    
+    if (!distances.includes('__ALL__') && distances.length > 0) {
+      const distanceMap: { [key: string]: string } = {
+        'Lång': 'Long',
+        'Medel': 'Middle', 
+        'Sprint': 'Sprint'
+      };
+      rpcParams.distances = distances.map(d => distanceMap[d] || d);
+    }
+    
+    if (!forms.includes('__ALL__') && forms.length > 0) {
+      const formMap: { [key: string]: string } = {
+        'Stafett': 'RelaySingleDay',
+        'Flerdagars': 'IndMultiDay',
+        'Individuell': '__NULL__'
+      };
+      rpcParams.form_groups = forms.map(f => formMap[f] || f);
+    }
+    
+    if (!selectedDisciplines.includes(-1) && selectedDisciplines.length > 0) {
+      rpcParams.discipline_ids = selectedDisciplines.filter(id => id !== -1);
+    }
+    
+    if (selectedGender !== '__ALL__') {
+      const genderMap: { [key: string]: string } = {
+        'Damer': 'F',
+        'Herrar': 'M'
+      };
+      const mappedGender = genderMap[selectedGender] || selectedGender;
+      if (mappedGender !== '__ALL__') {
+        rpcParams.genders = [mappedGender];
+      }
+    }
+
+    const { data, error } = await supabase.rpc('rpc_index461', rpcParams);
+    if (error) throw error;
+
+    // Get unique competitions
+    const uniqueCompetitions = new Map();
+    (data as Result[]).forEach(result => {
+      const competitionKey = result.eventraceid || result.eventid;
+      if (!uniqueCompetitions.has(competitionKey)) {
+        uniqueCompetitions.set(competitionKey, {
+          eventdate: result.eventdate,
+          eventname: result.eventname,
+          eventorganiser: '',
+          disciplineid: result.disciplineid,
+          eventclassificationid: result.eventclassificationid,
+          eventform: result.eventform,
+          eventdistance: result.eventdistance
+        });
+      }
+    });
+
+    return Array.from(uniqueCompetitions.values());
+  };
+
+  const fetchParticipantsData = async () => {
+    const rpcParams: any = {};
+    
+    if (selectedYear !== null) {
+      rpcParams.years = [selectedYear];
+    }
+    
+    if (!distances.includes('__ALL__') && distances.length > 0) {
+      const distanceMap: { [key: string]: string } = {
+        'Lång': 'Long',
+        'Medel': 'Middle', 
+        'Sprint': 'Sprint'
+      };
+      rpcParams.distances = distances.map(d => distanceMap[d] || d);
+    }
+    
+    if (!forms.includes('__ALL__') && forms.length > 0) {
+      const formMap: { [key: string]: string } = {
+        'Stafett': 'RelaySingleDay',
+        'Flerdagars': 'IndMultiDay',
+        'Individuell': '__NULL__'
+      };
+      rpcParams.form_groups = forms.map(f => formMap[f] || f);
+    }
+    
+    if (!selectedDisciplines.includes(-1) && selectedDisciplines.length > 0) {
+      rpcParams.discipline_ids = selectedDisciplines.filter(id => id !== -1);
+    }
+    
+    if (selectedGender !== '__ALL__') {
+      const genderMap: { [key: string]: string } = {
+        'Damer': 'F',
+        'Herrar': 'M'
+      };
+      const mappedGender = genderMap[selectedGender] || selectedGender;
+      if (mappedGender !== '__ALL__') {
+        rpcParams.genders = [mappedGender];
+      }
+    }
+
+    const { data, error } = await supabase.rpc('rpc_index461', rpcParams);
+    if (error) throw error;
+
+    // Get unique persons with at least 1 start
+    const uniquePersons = new Map();
+    (data as Result[]).forEach(result => {
+      if (result.resultcompetitorstatus !== 'DidNotStart') {
+        if (!uniquePersons.has(result.personid)) {
+          uniquePersons.set(result.personid, {
+            personnamegiven: result.personnamegiven,
+            personnamefamily: result.personnamefamily,
+            organisationid: CLUB_ID,
+            personid: result.personid,
+            personsex: result.personsex,
+            personbirthdate: null // Not available in current view
+          });
+        }
+      }
+    });
+
+    return Array.from(uniquePersons.values());
+  };
+
+  const fetchRacesData = async (statusFilter: string[]) => {
+    const rpcParams: any = {};
+    
+    if (selectedYear !== null) {
+      rpcParams.years = [selectedYear];
+    }
+    
+    if (!distances.includes('__ALL__') && distances.length > 0) {
+      const distanceMap: { [key: string]: string } = {
+        'Lång': 'Long',
+        'Medel': 'Middle', 
+        'Sprint': 'Sprint'
+      };
+      rpcParams.distances = distances.map(d => distanceMap[d] || d);
+    }
+    
+    if (!forms.includes('__ALL__') && forms.length > 0) {
+      const formMap: { [key: string]: string } = {
+        'Stafett': 'RelaySingleDay',
+        'Flerdagars': 'IndMultiDay',
+        'Individuell': '__NULL__'
+      };
+      rpcParams.form_groups = forms.map(f => formMap[f] || f);
+    }
+    
+    if (!selectedDisciplines.includes(-1) && selectedDisciplines.length > 0) {
+      rpcParams.discipline_ids = selectedDisciplines.filter(id => id !== -1);
+    }
+    
+    if (selectedGender !== '__ALL__') {
+      const genderMap: { [key: string]: string } = {
+        'Damer': 'F',
+        'Herrar': 'M'
+      };
+      const mappedGender = genderMap[selectedGender] || selectedGender;
+      if (mappedGender !== '__ALL__') {
+        rpcParams.genders = [mappedGender];
+      }
+    }
+
+    const { data, error } = await supabase.rpc('rpc_index461', rpcParams);
+    if (error) throw error;
+
+    // Filter by status
+    return (data as Result[]).filter(result => statusFilter.includes(result.resultcompetitorstatus || ''));
+  };
+
+  const handleKpiClick = async (type: string, title: string) => {
+    try {
+      let data: any[] = [];
+      
+      switch (type) {
+        case 'competitions':
+          data = await fetchCompetitionsData();
+          break;
+        case 'participants':
+          data = await fetchParticipantsData();
+          break;
+        case 'ok':
+          data = await fetchRacesData(['OK']);
+          break;
+        case 'didnotstart':
+          data = await fetchRacesData(['DidNotStart']);
+          break;
+        case 'mispunch':
+          data = await fetchRacesData(['Mispunch']);
+          break;
+        case 'other':
+          const otherData = await fetchRacesData([]);
+          data = otherData.filter(result => 
+            !['OK', 'DidNotStart', 'Mispunch'].includes(result.resultcompetitorstatus || '')
+          );
+          break;
+      }
+      
+      setKpiDialogTitle(title);
+      setKpiDialogData(data);
+      setKpiDialogType(type);
+      setKpiDialogOpen(true);
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to fetch data", variant: "destructive" });
+    }
   };
 
   async function callProxy(path: string) {
@@ -881,27 +1098,57 @@ export default function Index461() {
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               <div className="space-y-1">
                 <div className="text-sm text-muted-foreground">Antal tävlingar med deltagare</div>
-                <div className="text-2xl font-bold">{kpiStats.competitions_with_participation}</div>
+                <button 
+                  className="text-2xl font-bold underline text-primary hover:text-primary/80"
+                  onClick={() => handleKpiClick('competitions', 'Tävlingar med deltagare')}
+                >
+                  {kpiStats.competitions_with_participation}
+                </button>
               </div>
               <div className="space-y-1">
                 <div className="text-sm text-muted-foreground">Antal deltagare med minst 1 start</div>
-                <div className="text-2xl font-bold">{kpiStats.participants_with_start}</div>
+                <button 
+                  className="text-2xl font-bold underline text-primary hover:text-primary/80"
+                  onClick={() => handleKpiClick('participants', 'Deltagare med minst 1 start')}
+                >
+                  {kpiStats.participants_with_start}
+                </button>
               </div>
               <div className="space-y-1">
                 <div className="text-sm text-muted-foreground">Antal godkända lopp</div>
-                <div className="text-2xl font-bold">{kpiStats.runs_ok}</div>
+                <button 
+                  className="text-2xl font-bold underline text-primary hover:text-primary/80"
+                  onClick={() => handleKpiClick('ok', 'Godkända lopp')}
+                >
+                  {kpiStats.runs_ok}
+                </button>
               </div>
               <div className="space-y-1">
                 <div className="text-sm text-muted-foreground">Antal ej start</div>
-                <div className="text-2xl font-bold">{kpiStats.runs_didnotstart}</div>
+                <button 
+                  className="text-2xl font-bold underline text-primary hover:text-primary/80"
+                  onClick={() => handleKpiClick('didnotstart', 'Ej start')}
+                >
+                  {kpiStats.runs_didnotstart}
+                </button>
               </div>
               <div className="space-y-1">
                 <div className="text-sm text-muted-foreground">Antal felstämplade</div>
-                <div className="text-2xl font-bold">{kpiStats.runs_mispunch}</div>
+                <button 
+                  className="text-2xl font-bold underline text-primary hover:text-primary/80"
+                  onClick={() => handleKpiClick('mispunch', 'Felstämplade')}
+                >
+                  {kpiStats.runs_mispunch}
+                </button>
               </div>
               <div className="space-y-1">
                 <div className="text-sm text-muted-foreground">Antal övrig status</div>
-                <div className="text-2xl font-bold">{kpiStats.runs_other}</div>
+                <button 
+                  className="text-2xl font-bold underline text-primary hover:text-primary/80"
+                  onClick={() => handleKpiClick('other', 'Övrig status')}
+                >
+                  {kpiStats.runs_other}
+                </button>
               </div>
             </div>
           </CardContent>
@@ -1037,6 +1284,101 @@ export default function Index461() {
                 ))}
               </TableBody>
             </Table>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* KPI Details Dialog */}
+      <Dialog open={kpiDialogOpen} onOpenChange={setKpiDialogOpen}>
+        <DialogContent className="w-[min(95vw,1200px)] max-w-[95vw] h-screen max-h-[90vh] sm:h-auto sm:max-h-[90vh] flex flex-col">
+          <DialogHeader className="sticky top-0 z-10 bg-background border-b pb-4">
+            <DialogTitle>{kpiDialogTitle}</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto overflow-x-auto min-h-0">
+            {kpiDialogType === 'competitions' && (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Datum</TableHead>
+                    <TableHead>Tävlingsnamn</TableHead>
+                    <TableHead>Arrangör</TableHead>
+                    <TableHead>Disciplin ID</TableHead>
+                    <TableHead>Klassificering ID</TableHead>
+                    <TableHead>Tävlingsform</TableHead>
+                    <TableHead>Distans</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {kpiDialogData.map((item, index) => (
+                    <TableRow key={index}>
+                      <TableCell>{new Date(item.eventdate).toISOString().slice(0, 10)}</TableCell>
+                      <TableCell>{item.eventname}</TableCell>
+                      <TableCell>{item.eventorganiser || '-'}</TableCell>
+                      <TableCell>{item.disciplineid || '-'}</TableCell>
+                      <TableCell>{item.eventclassificationid || '-'}</TableCell>
+                      <TableCell>{formatFormLabel(item.eventform)}</TableCell>
+                      <TableCell>{formatDistanceLabel(item.eventdistance || '')}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+            
+            {kpiDialogType === 'participants' && (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Förnamn</TableHead>
+                    <TableHead>Efternamn</TableHead>
+                    <TableHead>Organisations ID</TableHead>
+                    <TableHead>Person ID</TableHead>
+                    <TableHead>Kön</TableHead>
+                    <TableHead>Födelsedatum</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {kpiDialogData.map((item, index) => (
+                    <TableRow key={index}>
+                      <TableCell>{item.personnamegiven || '-'}</TableCell>
+                      <TableCell>{item.personnamefamily || '-'}</TableCell>
+                      <TableCell>{item.organisationid}</TableCell>
+                      <TableCell>{item.personid}</TableCell>
+                      <TableCell>{item.personsex || '-'}</TableCell>
+                      <TableCell>{item.personbirthdate || '-'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+            
+            {(['ok', 'didnotstart', 'mispunch', 'other'].includes(kpiDialogType)) && (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Datum</TableHead>
+                    <TableHead>Tävlingsnamn</TableHead>
+                    <TableHead>Arrangör</TableHead>
+                    <TableHead>Förnamn</TableHead>
+                    <TableHead>Efternamn</TableHead>
+                    <TableHead>Organisations ID</TableHead>
+                    <TableHead>Resultatstatus</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {kpiDialogData.map((item, index) => (
+                    <TableRow key={index}>
+                      <TableCell>{new Date(item.eventdate).toISOString().slice(0, 10)}</TableCell>
+                      <TableCell>{item.eventname}</TableCell>
+                      <TableCell>-</TableCell>
+                      <TableCell>{item.personnamegiven || '-'}</TableCell>
+                      <TableCell>{item.personnamefamily || '-'}</TableCell>
+                      <TableCell>{CLUB_ID}</TableCell>
+                      <TableCell>{item.resultcompetitorstatus || '-'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </div>
         </DialogContent>
       </Dialog>
