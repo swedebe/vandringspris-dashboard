@@ -736,19 +736,43 @@ export default function Index461() {
       }
     }
 
-    const { data, error } = await supabase.rpc('rpc_index461', rpcParams);
-    if (error) throw error;
+    // Fetch competitions with event details
+    const { data: resultsData, error: resultsError } = await supabase.rpc('rpc_results_enriched', {
+      _club: CLUB_ID,
+      _year: selectedYear,
+      _gender: selectedGender === '__ALL__' ? null : (selectedGender === 'Damer' ? 'F' : selectedGender === 'Herrar' ? 'M' : selectedGender),
+      _age_min: null,
+      _age_max: null,
+      _only_championship: null,
+      _personid: null,
+      _limit: 10000, // Remove cap to show all competitions
+      _offset: 0
+    });
+    
+    if (resultsError) throw resultsError;
 
-    // Get unique competitions
+    // Get unique competitions with event details
     const uniqueCompetitions = new Map();
-    (data as Result[]).forEach(result => {
-      const competitionKey = result.eventraceid || result.eventid;
+    const { data: eventsData, error: eventsError } = await supabase
+      .from('events')
+      .select('eventraceid, eventorganiser')
+      .in('eventraceid', [...new Set((resultsData as any[]).map(r => r.eventraceid))]);
+    
+    if (eventsError) throw eventsError;
+    
+    const eventOrganiserMap = new Map();
+    eventsData.forEach(event => {
+      eventOrganiserMap.set(event.eventraceid, event.eventorganiser);
+    });
+
+    (resultsData as any[]).forEach(result => {
+      const competitionKey = result.eventraceid;
       if (!uniqueCompetitions.has(competitionKey)) {
         uniqueCompetitions.set(competitionKey, {
           eventdate: result.eventdate,
           eventname: result.eventname,
-          eventorganiser: '',
-          disciplineid: result.disciplineid,
+          eventorganiser: eventOrganiserMap.get(result.eventraceid) || '',
+          disciplineid: result.eventclassificationid, // Use classification as sport type
           eventclassificationid: result.eventclassificationid,
           eventform: result.eventform,
           eventdistance: result.eventdistance
@@ -756,117 +780,83 @@ export default function Index461() {
       }
     });
 
-    return Array.from(uniqueCompetitions.values());
+    // Sort by eventdate ascending (January first)
+    return Array.from(uniqueCompetitions.values()).sort((a, b) => 
+      new Date(a.eventdate).getTime() - new Date(b.eventdate).getTime()
+    );
   };
 
   const fetchParticipantsData = async () => {
-    const rpcParams: any = {};
+    // Fetch participants with birth year from persons table
+    const { data: resultsData, error: resultsError } = await supabase.rpc('rpc_results_enriched', {
+      _club: CLUB_ID,
+      _year: selectedYear,
+      _gender: selectedGender === '__ALL__' ? null : (selectedGender === 'Damer' ? 'F' : selectedGender === 'Herrar' ? 'M' : selectedGender),
+      _age_min: null,
+      _age_max: null,
+      _only_championship: null,
+      _personid: null,
+      _limit: 10000,
+      _offset: 0
+    });
     
-    if (selectedYear !== null) {
-      rpcParams.years = [selectedYear];
-    }
-    
-    if (!distances.includes('__ALL__') && distances.length > 0) {
-      const distanceMap: { [key: string]: string } = {
-        'Lång': 'Long',
-        'Medel': 'Middle', 
-        'Sprint': 'Sprint'
-      };
-      rpcParams.distances = distances.map(d => distanceMap[d] || d);
-    }
-    
-    if (!forms.includes('__ALL__') && forms.length > 0) {
-      const formMap: { [key: string]: string } = {
-        'Stafett': 'RelaySingleDay',
-        'Flerdagars': 'IndMultiDay',
-        'Individuell': '__NULL__'
-      };
-      rpcParams.form_groups = forms.map(f => formMap[f] || f);
-    }
-    
-    if (!selectedDisciplines.includes(-1) && selectedDisciplines.length > 0) {
-      rpcParams.discipline_ids = selectedDisciplines.filter(id => id !== -1);
-    }
-    
-    if (selectedGender !== '__ALL__') {
-      const genderMap: { [key: string]: string } = {
-        'Damer': 'F',
-        'Herrar': 'M'
-      };
-      const mappedGender = genderMap[selectedGender] || selectedGender;
-      if (mappedGender !== '__ALL__') {
-        rpcParams.genders = [mappedGender];
-      }
-    }
+    if (resultsError) throw resultsError;
 
-    const { data, error } = await supabase.rpc('rpc_index461', rpcParams);
-    if (error) throw error;
-
-    // Get unique persons with at least 1 start
-    const uniquePersons = new Map();
-    (data as Result[]).forEach(result => {
+    // Get unique person IDs with at least 1 start
+    const personIds = new Set();
+    (resultsData as any[]).forEach(result => {
       if (result.resultcompetitorstatus !== 'DidNotStart') {
-        if (!uniquePersons.has(result.personid)) {
-          uniquePersons.set(result.personid, {
-            personnamegiven: result.personnamegiven,
-            personnamefamily: result.personnamefamily,
-            organisationid: CLUB_ID,
-            personid: result.personid,
-            personsex: result.personsex,
-            personbirthdate: null // Not available in current view
-          });
-        }
+        personIds.add(result.personid);
       }
     });
 
-    return Array.from(uniquePersons.values());
+    // Fetch person details with birth dates
+    const { data: personsData, error: personsError } = await supabase
+      .from('persons')
+      .select('personid, personnamegiven, personnamefamily, personsex, personbirthdate, organisationid')
+      .in('personid', Array.from(personIds));
+    
+    if (personsError) throw personsError;
+
+    return personsData.map(person => ({
+      ...person,
+      födelsearår: person.personbirthdate ? new Date(person.personbirthdate).getFullYear() : null
+    }));
   };
 
-  const fetchRacesData = async (statusFilter: string[]) => {
-    const rpcParams: any = {};
+  const fetchRacesData = async (statusFilter: string[], isOtherStatus = false) => {
+    const { data, error } = await supabase.rpc('rpc_results_enriched', {
+      _club: CLUB_ID,
+      _year: selectedYear,
+      _gender: selectedGender === '__ALL__' ? null : (selectedGender === 'Damer' ? 'F' : selectedGender === 'Herrar' ? 'M' : selectedGender),
+      _age_min: null,
+      _age_max: null,
+      _only_championship: null,
+      _personid: null,
+      _limit: 10000,
+      _offset: 0
+    });
     
-    if (selectedYear !== null) {
-      rpcParams.years = [selectedYear];
-    }
-    
-    if (!distances.includes('__ALL__') && distances.length > 0) {
-      const distanceMap: { [key: string]: string } = {
-        'Lång': 'Long',
-        'Medel': 'Middle', 
-        'Sprint': 'Sprint'
-      };
-      rpcParams.distances = distances.map(d => distanceMap[d] || d);
-    }
-    
-    if (!forms.includes('__ALL__') && forms.length > 0) {
-      const formMap: { [key: string]: string } = {
-        'Stafett': 'RelaySingleDay',
-        'Flerdagars': 'IndMultiDay',
-        'Individuell': '__NULL__'
-      };
-      rpcParams.form_groups = forms.map(f => formMap[f] || f);
-    }
-    
-    if (!selectedDisciplines.includes(-1) && selectedDisciplines.length > 0) {
-      rpcParams.discipline_ids = selectedDisciplines.filter(id => id !== -1);
-    }
-    
-    if (selectedGender !== '__ALL__') {
-      const genderMap: { [key: string]: string } = {
-        'Damer': 'F',
-        'Herrar': 'M'
-      };
-      const mappedGender = genderMap[selectedGender] || selectedGender;
-      if (mappedGender !== '__ALL__') {
-        rpcParams.genders = [mappedGender];
-      }
-    }
-
-    const { data, error } = await supabase.rpc('rpc_index461', rpcParams);
     if (error) throw error;
 
-    // Filter by status
-    return (data as Result[]).filter(result => statusFilter.includes(result.resultcompetitorstatus || ''));
+    // Filter by status with exact matching
+    let filtered;
+    if (isOtherStatus) {
+      // For "other" status, exclude OK, DidNotStart, and MisPunch
+      filtered = (data as any[]).filter(result => 
+        !['OK', 'DidNotStart', 'MisPunch'].includes(result.resultcompetitorstatus || '')
+      );
+    } else {
+      // For specific statuses, ensure exact match (case sensitive)
+      filtered = (data as any[]).filter(result => 
+        statusFilter.includes(result.resultcompetitorstatus || '')
+      );
+    }
+
+    // Sort by eventdate ascending
+    return filtered.sort((a, b) => 
+      new Date(a.eventdate).getTime() - new Date(b.eventdate).getTime()
+    );
   };
 
   const handleKpiClick = async (type: string, title: string) => {
@@ -880,20 +870,14 @@ export default function Index461() {
         case 'participants':
           data = await fetchParticipantsData();
           break;
-        case 'ok':
-          data = await fetchRacesData(['OK']);
-          break;
         case 'didnotstart':
           data = await fetchRacesData(['DidNotStart']);
           break;
         case 'mispunch':
-          data = await fetchRacesData(['Mispunch']);
+          data = await fetchRacesData(['MisPunch']); // Correct case-sensitive status
           break;
         case 'other':
-          const otherData = await fetchRacesData([]);
-          data = otherData.filter(result => 
-            !['OK', 'DidNotStart', 'Mispunch'].includes(result.resultcompetitorstatus || '')
-          );
+          data = await fetchRacesData([], true); // Use isOtherStatus flag
           break;
       }
       
@@ -1116,12 +1100,9 @@ export default function Index461() {
               </div>
               <div className="space-y-1">
                 <div className="text-sm text-muted-foreground">Antal godkända lopp</div>
-                <button 
-                  className="text-2xl font-bold underline text-primary hover:text-primary/80"
-                  onClick={() => handleKpiClick('ok', 'Godkända lopp')}
-                >
+                <div className="text-2xl font-bold text-foreground">
                   {kpiStats.runs_ok}
-                </button>
+                </div>
               </div>
               <div className="space-y-1">
                 <div className="text-sm text-muted-foreground">Antal ej start</div>
@@ -1303,23 +1284,38 @@ export default function Index461() {
                     <TableHead>Tävlingsnamn</TableHead>
                     <TableHead>Arrangör</TableHead>
                     <TableHead>Disciplin ID</TableHead>
-                    <TableHead>Klassificering ID</TableHead>
+                    <TableHead>Klassificering</TableHead>
                     <TableHead>Tävlingsform</TableHead>
                     <TableHead>Distans</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {kpiDialogData.map((item, index) => (
-                    <TableRow key={index}>
-                      <TableCell>{new Date(item.eventdate).toISOString().slice(0, 10)}</TableCell>
-                      <TableCell>{item.eventname}</TableCell>
-                      <TableCell>{item.eventorganiser || '-'}</TableCell>
-                      <TableCell>{item.disciplineid || '-'}</TableCell>
-                      <TableCell>{item.eventclassificationid || '-'}</TableCell>
-                      <TableCell>{formatFormLabel(item.eventform)}</TableCell>
-                      <TableCell>{formatDistanceLabel(item.eventdistance || '')}</TableCell>
-                    </TableRow>
-                  ))}
+                  {kpiDialogData.map((item, index) => {
+                    // Translate eventclassificationid to sport name
+                    const getSportLabel = (classificationId: number | null) => {
+                      const sportLabels: { [key: number]: string } = {
+                        1: 'Fot-OL',
+                        2: 'MTBO',
+                        3: 'SkidO',
+                        4: 'Pre-O',
+                        5: 'OL-skytte',
+                        6: 'Indoor'
+                      };
+                      return classificationId ? sportLabels[classificationId] || classificationId.toString() : '-';
+                    };
+                    
+                    return (
+                      <TableRow key={index}>
+                        <TableCell>{new Date(item.eventdate).toISOString().slice(0, 10)}</TableCell>
+                        <TableCell>{item.eventname}</TableCell>
+                        <TableCell>{item.eventorganiser || '-'}</TableCell>
+                        <TableCell>{item.disciplineid || '-'}</TableCell>
+                        <TableCell>{getSportLabel(item.eventclassificationid)}</TableCell>
+                        <TableCell>{formatFormLabel(item.eventform)}</TableCell>
+                        <TableCell>{formatDistanceLabel(item.eventdistance || '')}</TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             )}
@@ -1333,7 +1329,7 @@ export default function Index461() {
                     <TableHead>Organisations ID</TableHead>
                     <TableHead>Person ID</TableHead>
                     <TableHead>Kön</TableHead>
-                    <TableHead>Födelsedatum</TableHead>
+                    <TableHead>Födelseår</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1344,20 +1340,19 @@ export default function Index461() {
                       <TableCell>{item.organisationid}</TableCell>
                       <TableCell>{item.personid}</TableCell>
                       <TableCell>{item.personsex || '-'}</TableCell>
-                      <TableCell>{item.personbirthdate || '-'}</TableCell>
+                      <TableCell>{item.födelsearår || '-'}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
             )}
             
-            {(['ok', 'didnotstart', 'mispunch', 'other'].includes(kpiDialogType)) && (
+            {(['didnotstart', 'mispunch', 'other'].includes(kpiDialogType)) && (
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Datum</TableHead>
                     <TableHead>Tävlingsnamn</TableHead>
-                    <TableHead>Arrangör</TableHead>
                     <TableHead>Förnamn</TableHead>
                     <TableHead>Efternamn</TableHead>
                     <TableHead>Organisations ID</TableHead>
@@ -1369,7 +1364,6 @@ export default function Index461() {
                     <TableRow key={index}>
                       <TableCell>{new Date(item.eventdate).toISOString().slice(0, 10)}</TableCell>
                       <TableCell>{item.eventname}</TableCell>
-                      <TableCell>-</TableCell>
                       <TableCell>{item.personnamegiven || '-'}</TableCell>
                       <TableCell>{item.personnamefamily || '-'}</TableCell>
                       <TableCell>{CLUB_ID}</TableCell>
