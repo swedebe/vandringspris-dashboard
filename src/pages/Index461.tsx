@@ -15,6 +15,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ChevronDown } from "lucide-react";
+import VersionBadge from "@/components/VersionBadge";
 
 const CLUB_ID = 461;
 
@@ -901,6 +902,7 @@ export default function Index461() {
           {t(texts, "title.vandringspris", "Vandringspris")} {clubName}
         </h1>
         <p className="text-muted-foreground">{t(texts, "intro", "Förklarande textmassa...")}</p>
+        <VersionBadge />
       </header>
 
       {/* Filters */}
