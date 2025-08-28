@@ -14,8 +14,104 @@ import { hasSupabaseConfig, getProxyBaseUrl } from "@/lib/config";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Loader2 } from "lucide-react";
 const CLUB_ID = 461;
+
+// Shared function to build consistent RPC parameters for all queries
+function buildRpcParams(filters: {
+  selectedYear: number | null;
+  selectedGender: string;
+  selectedDisciplines: number[];
+  distances: string[];
+  forms: string[];
+}) {
+  const { selectedYear, selectedGender, selectedDisciplines, distances, forms } = filters;
+  const params: any = {};
+
+  // Year filter
+  if (selectedYear !== null) {
+    params.years = [selectedYear];
+  }
+
+  // Distances filter - map UI values to database values
+  if (!distances.includes('__ALL__') && distances.length > 0) {
+    const distanceMap: { [key: string]: string } = {
+      'Lång': 'Long',
+      'Medel': 'Middle', 
+      'Sprint': 'Sprint'
+    };
+    params.distances = distances.map(d => distanceMap[d] || d);
+  }
+
+  // Forms filter - map UI values to database values
+  if (!forms.includes('__ALL__') && forms.length > 0) {
+    const formMap: { [key: string]: string } = {
+      'Stafett': 'RelaySingleDay',
+      'Flerdagars': 'IndMultiDay',
+      'Individuell': '__NULL__'
+    };
+    params.form_groups = forms.map(f => formMap[f] || f);
+  }
+
+  // Disciplines filter
+  if (!selectedDisciplines.includes(-1) && selectedDisciplines.length > 0) {
+    params.discipline_ids = selectedDisciplines.filter(id => id !== -1);
+  }
+
+  // Gender filter - map UI value to database value
+  if (selectedGender !== '__ALL__') {
+    const genderMap: { [key: string]: string } = {
+      'Damer': 'F',
+      'Herrar': 'M'
+    };
+    const mappedGender = genderMap[selectedGender] || selectedGender;
+    if (mappedGender !== '__ALL__') {
+      params.genders = [mappedGender];
+    }
+  }
+
+  return params;
+}
+
+// Function to fetch ALL results for a person with complete filtering
+async function fetchAllResultsForPerson(personId: number, filters: {
+  selectedYear: number | null;
+  selectedGender: string;
+  selectedDisciplines: number[];
+  distances: string[];
+  forms: string[];
+}) {
+  const limit = 10000;
+  let offset = 0;
+  let allData: any[] = [];
+
+  while (true) {
+    const { data, error } = await supabase.rpc('rpc_results_enriched', {
+      _club: CLUB_ID,
+      _year: filters.selectedYear,
+      _gender: filters.selectedGender === '__ALL__' ? null : (
+        filters.selectedGender === 'Damer' ? 'F' : 
+        filters.selectedGender === 'Herrar' ? 'M' : 
+        filters.selectedGender
+      ),
+      _age_min: null,
+      _age_max: null,
+      _only_championship: null,
+      _personid: personId,
+      _limit: limit,
+      _offset: offset
+    });
+
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+
+    allData = allData.concat(data);
+    if (data.length < limit) break;
+    offset += limit;
+  }
+
+  return allData;
+}
 
 type Result = {
   eventraceid: number;
@@ -383,10 +479,10 @@ function StatsTable({
   onOpenDrilldown,
 }: {
   title: string;
-  rows: { personid: number; name: string; value: number; usedItems?: Result[] }[];
+  rows: { personid: number; name: string; value: number; usedItems?: Result[]; tableType?: string; ageMin?: number | null; ageMax?: number | null; onlyChampionship?: boolean; topN?: number }[];
   valueLabel: string;
   noDataText: string;
-  onOpenDrilldown: (row: { personid: number; name: string; usedItems?: Result[] }) => void;
+  onOpenDrilldown: (row: { personid: number; name: string; usedItems?: Result[]; tableType?: string; ageMin?: number | null; ageMax?: number | null; onlyChampionship?: boolean; topN?: number }) => void;
 }) {
   return (
     <Card>
@@ -618,12 +714,9 @@ export default function Index461() {
       personid: competitor.personid,
       name: `${competitor.personnamegiven || ''} ${competitor.personnamefamily || ''}`.trim() || '-',
       value: competitor.competitions_count,
-      usedItems: baseResults.filter(r => 
-        r.personid === competitor.personid && 
-        ['OK', 'Mispunch'].includes(r.resultcompetitorstatus || '')
-      ),
+      tableType: 'mostRaces',
     }));
-  }, [topCompetitors, baseResults]);
+  }, [topCompetitors]);
 
   const makeTopPointsRows = (n: number, ageMin: number | null, ageMax: number | null, onlyChampionship?: boolean) => {
     const filtered = baseResults.filter((r) => {
@@ -642,7 +735,16 @@ export default function Index461() {
         .sort((a, b) => (b.points ?? 0) - (a.points ?? 0))
         .slice(0, n);
       const value = topItems.reduce((sum, i) => sum + (i.points ?? 0), 0);
-      return { personid, name, value, usedItems: topItems };
+      return { 
+        personid, 
+        name, 
+        value, 
+        tableType: 'points',
+        ageMin,
+        ageMax,
+        onlyChampionship,
+        topN: n > 999 ? undefined : n // Don't limit if n is very large (like 9999 for championship)
+      };
     });
     return rows.sort((a, b) => b.value - a.value);
   };
@@ -655,7 +757,7 @@ export default function Index461() {
       personid,
       name,
       value: items.reduce((sum, i) => sum + (i.points ?? 0), 0),
-      usedItems: items,
+      tableType: 'points',
     }));
     return rows.sort((a, b) => b.value - a.value);
   }, [baseResults]);
@@ -673,6 +775,7 @@ export default function Index461() {
   const [drillOpen, setDrillOpen] = useState(false);
   const [drillTitle, setDrillTitle] = useState("");
   const [drillItems, setDrillItems] = useState<Result[]>([]);
+  const [drillLoading, setDrillLoading] = useState(false);
 
   // KPI popup states
   const [kpiDialogOpen, setKpiDialogOpen] = useState(false);
@@ -680,10 +783,69 @@ export default function Index461() {
   const [kpiDialogData, setKpiDialogData] = useState<any[]>([]);
   const [kpiDialogType, setKpiDialogType] = useState<string>("");
 
-  const openDrill = (title: string, row: { name: string; usedItems?: Result[] }) => {
+  const openDrill = async (title: string, row: { 
+    personid: number; 
+    name: string; 
+    usedItems?: Result[]; 
+    tableType?: string; 
+    ageMin?: number | null; 
+    ageMax?: number | null; 
+    onlyChampionship?: boolean; 
+    topN?: number 
+  }) => {
     setDrillTitle(`${title} – ${row.name}`);
-    setDrillItems(row.usedItems ?? []);
+    setDrillLoading(true);
     setDrillOpen(true);
+    
+    try {
+      // Fetch complete results for this person with all applied filters
+      const allResults = await fetchAllResultsForPerson(row.personid, {
+        selectedYear,
+        selectedGender,
+        selectedDisciplines,
+        distances,
+        forms,
+      });
+
+      // Apply the same filtering logic that was used to calculate the summary value
+      let filteredResults = allResults.filter((r: any) => {
+        // Age filtering (if applicable)
+        if (row.ageMin !== undefined && row.ageMin !== null && (r.personage ?? 0) < row.ageMin) return false;
+        if (row.ageMax !== undefined && row.ageMax !== null && (r.personage ?? 0) > row.ageMax) return false;
+        
+        // Championship filtering (if applicable)
+        if (row.onlyChampionship && r.eventclassificationid !== 1) return false;
+        
+        // Status filtering based on table type
+        if (row.tableType === 'mostRaces') {
+          // For "most races", include OK and Mispunch statuses
+          return ['OK', 'Mispunch'].includes(r.resultcompetitorstatus || '');
+        } else {
+          // For points tables, only include OK status
+          return r.resultcompetitorstatus === 'OK';
+        }
+      });
+
+      // Sort and limit for top-N tables
+      if (row.topN && row.topN > 0) {
+        filteredResults = filteredResults
+          .filter((r: any) => typeof r.points === 'number')
+          .sort((a: any, b: any) => (b.points ?? 0) - (a.points ?? 0))
+          .slice(0, row.topN);
+      }
+
+      setDrillItems(filteredResults as Result[]);
+    } catch (error) {
+      console.error('Error fetching drill-down data:', error);
+      toast({ 
+        title: "Error", 
+        description: "Failed to fetch competition details", 
+        variant: "destructive" 
+      });
+      setDrillItems([]);
+    } finally {
+      setDrillLoading(false);
+    }
   };
 
   // KPI data fetching functions
@@ -1148,44 +1310,59 @@ export default function Index461() {
             <DialogTitle>{drillTitle}</DialogTitle>
           </DialogHeader>
           <div className="flex-1 overflow-y-auto overflow-x-auto min-h-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Tävlingsdatum</TableHead>
-                  <TableHead>Tävlingsnamn</TableHead>
-                  <TableHead>Distans</TableHead>
-                  <TableHead>Tävlingsform</TableHead>
-                  <TableHead>Klass</TableHead>
-                  <TableHead>Klasstyp</TableHead>
-                  <TableHead>Klassfaktor</TableHead>
-                  <TableHead>Poäng</TableHead>
-                  <TableHead>Tid</TableHead>
-                  <TableHead>Tid efter</TableHead>
-                  <TableHead>Placering</TableHead>
-                  <TableHead>Antal startande</TableHead>
-                  <TableHead>Resultatstatus</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {drillItems.map((r) => (
-                  <TableRow key={`${r.eventraceid}-${r.personid}`}>
-                    <TableCell>{new Date(r.eventdate).toISOString().slice(0, 10)}</TableCell>
-                    <TableCell>{r.eventname}</TableCell>
-                    <TableCell>{r.eventdistance_label || formatDistanceLabel(r.eventdistance || '')}</TableCell>
-                    <TableCell>{r.eventform_label || formatFormLabel(r.eventform)}</TableCell>
-                    <TableCell>{r.eventclassname ?? ""}</TableCell>
-                    <TableCell>{r.classtypeid ?? ""}</TableCell>
-                    <TableCell>{r.klassfaktor ?? ""}</TableCell>
-                    <TableCell>{typeof r.points === "number" ? r.points.toFixed(2) : ""}</TableCell>
-                    <TableCell>{r.resulttime != null ? formatSecondsToHMS(r.resulttime) : ""}</TableCell>
-                    <TableCell>{r.resulttimediff != null ? formatSecondsToHMS(r.resulttimediff) : ""}</TableCell>
-                    <TableCell>{r.resultposition ?? ""}</TableCell>
-                    <TableCell>{r.classresultnumberofstarts ?? ""}</TableCell>
-                    <TableCell>{r.resultcompetitorstatus ?? ""}</TableCell>
+            {drillLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                <span>Loading competition details...</span>
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Tävlingsdatum</TableHead>
+                    <TableHead>Tävlingsnamn</TableHead>
+                    <TableHead>Distans</TableHead>
+                    <TableHead>Tävlingsform</TableHead>
+                    <TableHead>Klass</TableHead>
+                    <TableHead>Klasstyp</TableHead>
+                    <TableHead>Klassfaktor</TableHead>
+                    <TableHead>Poäng</TableHead>
+                    <TableHead>Tid</TableHead>
+                    <TableHead>Tid efter</TableHead>
+                    <TableHead>Placering</TableHead>
+                    <TableHead>Antal startande</TableHead>
+                    <TableHead>Resultatstatus</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {drillItems.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={13} className="text-center py-8 text-muted-foreground">
+                        No competitions found
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    drillItems.map((r) => (
+                      <TableRow key={`${r.eventraceid}-${r.personid}`}>
+                        <TableCell>{new Date(r.eventdate).toISOString().slice(0, 10)}</TableCell>
+                        <TableCell>{r.eventname}</TableCell>
+                        <TableCell>{r.eventdistance_label || formatDistanceLabel(r.eventdistance || '')}</TableCell>
+                        <TableCell>{r.eventform_label || formatFormLabel(r.eventform)}</TableCell>
+                        <TableCell>{r.eventclassname ?? ""}</TableCell>
+                        <TableCell>{r.classtypeid ?? ""}</TableCell>
+                        <TableCell>{r.klassfaktor ?? ""}</TableCell>
+                        <TableCell>{typeof r.points === "number" ? r.points.toFixed(2) : ""}</TableCell>
+                        <TableCell>{r.resulttime != null ? formatSecondsToHMS(r.resulttime) : ""}</TableCell>
+                        <TableCell>{r.resulttimediff != null ? formatSecondsToHMS(r.resulttimediff) : ""}</TableCell>
+                        <TableCell>{r.resultposition ?? ""}</TableCell>
+                        <TableCell>{r.classresultnumberofstarts ?? ""}</TableCell>
+                        <TableCell>{r.resultcompetitorstatus ?? ""}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            )}
           </div>
         </DialogContent>
       </Dialog>
