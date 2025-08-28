@@ -688,6 +688,8 @@ export default function Index461() {
   const [kpiDialogTitle, setKpiDialogTitle] = useState("");
   const [kpiDialogData, setKpiDialogData] = useState<any[]>([]);
   const [kpiDialogType, setKpiDialogType] = useState<string>("");
+  const [kpiDialogPage, setKpiDialogPage] = useState(0);
+  const [kpiDialogPageSize] = useState(100);
 
   const openDrill = (title: string, row: { name: string; usedItems?: Result[] }) => {
     setDrillTitle(`${title} – ${row.name}`);
@@ -695,12 +697,13 @@ export default function Index461() {
     setDrillOpen(true);
   };
 
-  // KPI data fetching functions
-  const fetchCompetitionsData = async () => {
-    const rpcParams: any = {};
+  // Shared function to build RPC parameters (ensures consistency)
+  const buildRpcParams = () => {
+    const params: any = {};
     
     if (selectedYear !== null) {
-      rpcParams.years = [selectedYear];
+      params.year = selectedYear; // For stats RPC
+      params.years = [selectedYear]; // For other RPCs
     }
     
     if (!distances.includes('__ALL__') && distances.length > 0) {
@@ -709,7 +712,9 @@ export default function Index461() {
         'Medel': 'Middle', 
         'Sprint': 'Sprint'
       };
-      rpcParams.distances = distances.map(d => distanceMap[d] || d);
+      params.distances = distances.map(d => distanceMap[d] || d);
+    } else {
+      params.distances = [];
     }
     
     if (!forms.includes('__ALL__') && forms.length > 0) {
@@ -718,11 +723,15 @@ export default function Index461() {
         'Flerdagars': 'IndMultiDay',
         'Individuell': '__NULL__'
       };
-      rpcParams.form_groups = forms.map(f => formMap[f] || f);
+      params.form_groups = forms.map(f => formMap[f] || f);
+    } else {
+      params.form_groups = [];
     }
     
     if (!selectedDisciplines.includes(-1) && selectedDisciplines.length > 0) {
-      rpcParams.discipline_ids = selectedDisciplines.filter(id => id !== -1);
+      params.discipline_ids = selectedDisciplines.filter(id => id !== -1);
+    } else {
+      params.discipline_ids = [];
     }
     
     if (selectedGender !== '__ALL__') {
@@ -732,11 +741,20 @@ export default function Index461() {
       };
       const mappedGender = genderMap[selectedGender] || selectedGender;
       if (mappedGender !== '__ALL__') {
-        rpcParams.genders = [mappedGender];
+        params.genders = [mappedGender];
+      } else {
+        params.genders = [];
       }
+    } else {
+      params.genders = [];
     }
 
-    // Fetch competitions with event details
+    return params;
+  };
+
+  // KPI data fetching functions
+  const fetchCompetitionsData = async () => {
+    // Use rpc_results_enriched with identical filters as KPI stats
     const { data: resultsData, error: resultsError } = await supabase.rpc('rpc_results_enriched', {
       _club: CLUB_ID,
       _year: selectedYear,
@@ -745,18 +763,21 @@ export default function Index461() {
       _age_max: null,
       _only_championship: null,
       _personid: null,
-      _limit: 10000, // Remove cap to show all competitions
+      _limit: 50000, // No silent cap - use high limit
       _offset: 0
     });
     
     if (resultsError) throw resultsError;
 
-    // Get unique competitions with event details
+    // Get unique competitions (DISTINCT by eventraceid)
     const uniqueCompetitions = new Map();
+    
+    // Get event organiser data for all competitions
+    const eventRaceIds = [...new Set((resultsData as any[]).map(r => r.eventraceid))];
     const { data: eventsData, error: eventsError } = await supabase
       .from('events')
       .select('eventraceid, eventorganiser')
-      .in('eventraceid', [...new Set((resultsData as any[]).map(r => r.eventraceid))]);
+      .in('eventraceid', eventRaceIds);
     
     if (eventsError) throw eventsError;
     
@@ -772,7 +793,7 @@ export default function Index461() {
           eventdate: result.eventdate,
           eventname: result.eventname,
           eventorganiser: eventOrganiserMap.get(result.eventraceid) || '',
-          disciplineid: result.eventclassificationid, // Use classification as sport type
+          disciplineid: result.eventclassificationid, // Use classification as sport type  
           eventclassificationid: result.eventclassificationid,
           eventform: result.eventform,
           eventdistance: result.eventdistance
@@ -787,7 +808,7 @@ export default function Index461() {
   };
 
   const fetchParticipantsData = async () => {
-    // Fetch participants with birth year from persons table
+    // Use identical filters as KPI stats
     const { data: resultsData, error: resultsError } = await supabase.rpc('rpc_results_enriched', {
       _club: CLUB_ID,
       _year: selectedYear,
@@ -796,35 +817,62 @@ export default function Index461() {
       _age_max: null,
       _only_championship: null,
       _personid: null,
-      _limit: 10000,
+      _limit: 50000, // No silent cap
       _offset: 0
     });
     
     if (resultsError) throw resultsError;
 
-    // Get unique person IDs with at least 1 start
-    const personIds = new Set();
+    // Get unique person IDs with at least 1 start (status != 'DidNotStart')
+    const uniquePersons = new Map();
     (resultsData as any[]).forEach(result => {
-      if (result.resultcompetitorstatus !== 'DidNotStart') {
-        personIds.add(result.personid);
+      const status = (result.resultcompetitorstatus || '').trim();
+      if (status !== 'DidNotStart') {
+        if (!uniquePersons.has(result.personid)) {
+          uniquePersons.set(result.personid, {
+            personid: result.personid,
+            personnamegiven: result.personnamegiven,
+            personnamefamily: result.personnamefamily,
+            personsex: result.personsex,
+            organisationid: CLUB_ID, // From club filter
+            födelsearår: null // Will be filled from persons table
+          });
+        }
       }
     });
 
-    // Fetch person details with birth dates
-    const { data: personsData, error: personsError } = await supabase
-      .from('persons')
-      .select('personid, personnamegiven, personnamefamily, personsex, personbirthdate, organisationid')
-      .in('personid', Array.from(personIds));
-    
-    if (personsError) throw personsError;
+    // Get birth years from persons table
+    const personIds = Array.from(uniquePersons.keys());
+    if (personIds.length > 0) {
+      const { data: personsData, error: personsError } = await supabase
+        .from('persons')
+        .select('personid, personbirthdate')
+        .in('personid', personIds);
+      
+      if (personsError) throw personsError;
+      
+      personsData.forEach(person => {
+        if (uniquePersons.has(person.personid)) {
+          const existingPerson = uniquePersons.get(person.personid);
+          existingPerson.födelsearår = person.personbirthdate ? new Date(person.personbirthdate).getFullYear() : null;
+        }
+      });
+    }
 
-    return personsData.map(person => ({
-      ...person,
-      födelsearår: person.personbirthdate ? new Date(person.personbirthdate).getFullYear() : null
-    }));
+    // Sort by family name, then given name (ascending)
+    return Array.from(uniquePersons.values()).sort((a, b) => {
+      const familyA = (a.personnamefamily || '').toLowerCase();
+      const familyB = (b.personnamefamily || '').toLowerCase();
+      if (familyA !== familyB) return familyA.localeCompare(familyB);
+      
+      const givenA = (a.personnamegiven || '').toLowerCase();
+      const givenB = (b.personnamegiven || '').toLowerCase();
+      return givenA.localeCompare(givenB);
+    });
   };
 
   const fetchRacesData = async (statusFilter: string[], isOtherStatus = false) => {
+    // Use identical filters as KPI stats
     const { data, error } = await supabase.rpc('rpc_results_enriched', {
       _club: CLUB_ID,
       _year: selectedYear,
@@ -833,27 +881,29 @@ export default function Index461() {
       _age_max: null,
       _only_championship: null,
       _personid: null,
-      _limit: 10000,
+      _limit: 50000, // No silent cap
       _offset: 0
     });
     
     if (error) throw error;
 
-    // Filter by status with exact matching
+    // Normalize and filter by status with exact matching
     let filtered;
     if (isOtherStatus) {
-      // For "other" status, exclude OK, DidNotStart, and MisPunch
-      filtered = (data as any[]).filter(result => 
-        !['OK', 'DidNotStart', 'MisPunch'].includes(result.resultcompetitorstatus || '')
-      );
+      // For "other" status, exclude OK, DidNotStart, and MisPunch (exact case)
+      filtered = (data as any[]).filter(result => {
+        const status = (result.resultcompetitorstatus || '').trim();
+        return !['OK', 'DidNotStart', 'MisPunch'].includes(status);
+      });
     } else {
-      // For specific statuses, ensure exact match (case sensitive)
-      filtered = (data as any[]).filter(result => 
-        statusFilter.includes(result.resultcompetitorstatus || '')
-      );
+      // For specific statuses, ensure exact match (case sensitive, trimmed)
+      filtered = (data as any[]).filter(result => {
+        const status = (result.resultcompetitorstatus || '').trim();
+        return statusFilter.includes(status);
+      });
     }
 
-    // Sort by eventdate ascending
+    // Sort by eventdate ascending (January first)
     return filtered.sort((a, b) => 
       new Date(a.eventdate).getTime() - new Date(b.eventdate).getTime()
     );
@@ -874,7 +924,7 @@ export default function Index461() {
           data = await fetchRacesData(['DidNotStart']);
           break;
         case 'mispunch':
-          data = await fetchRacesData(['MisPunch']); // Correct case-sensitive status
+          data = await fetchRacesData(['MisPunch']); // Exact case-sensitive status
           break;
         case 'other':
           data = await fetchRacesData([], true); // Use isOtherStatus flag
@@ -884,6 +934,7 @@ export default function Index461() {
       setKpiDialogTitle(title);
       setKpiDialogData(data);
       setKpiDialogType(type);
+      setKpiDialogPage(0); // Reset to first page
       setKpiDialogOpen(true);
     } catch (error) {
       toast({ title: "Error", description: "Failed to fetch data", variant: "destructive" });
@@ -1100,7 +1151,7 @@ export default function Index461() {
               </div>
               <div className="space-y-1">
                 <div className="text-sm text-muted-foreground">Antal godkända lopp</div>
-                <div className="text-2xl font-bold text-foreground">
+                <div className="text-2xl font-bold text-muted-foreground">
                   {kpiStats.runs_ok}
                 </div>
               </div>
@@ -1273,9 +1324,38 @@ export default function Index461() {
       <Dialog open={kpiDialogOpen} onOpenChange={setKpiDialogOpen}>
         <DialogContent className="w-[min(95vw,1200px)] max-w-[95vw] h-screen max-h-[90vh] sm:h-auto sm:max-h-[90vh] flex flex-col">
           <DialogHeader className="sticky top-0 z-10 bg-background border-b pb-4">
-            <DialogTitle>{kpiDialogTitle}</DialogTitle>
+            <DialogTitle>{kpiDialogTitle} ({kpiDialogData.length} resultat)</DialogTitle>
           </DialogHeader>
           <div className="flex-1 overflow-y-auto overflow-x-auto min-h-0">
+            {/* Pagination Controls */}
+            {kpiDialogData.length > kpiDialogPageSize && (
+              <div className="flex justify-between items-center p-4 border-b bg-background">
+                <div className="text-sm text-muted-foreground">
+                  Visar {kpiDialogPage * kpiDialogPageSize + 1}-{Math.min((kpiDialogPage + 1) * kpiDialogPageSize, kpiDialogData.length)} av {kpiDialogData.length}
+                </div>
+                <div className="flex gap-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => setKpiDialogPage(Math.max(0, kpiDialogPage - 1))}
+                    disabled={kpiDialogPage === 0}
+                  >
+                    Föregående
+                  </Button>
+                  <span className="px-3 py-2 text-sm">
+                    Sida {kpiDialogPage + 1} av {Math.ceil(kpiDialogData.length / kpiDialogPageSize)}
+                  </span>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => setKpiDialogPage(Math.min(Math.ceil(kpiDialogData.length / kpiDialogPageSize) - 1, kpiDialogPage + 1))}
+                    disabled={kpiDialogPage >= Math.ceil(kpiDialogData.length / kpiDialogPageSize) - 1}
+                  >
+                    Nästa
+                  </Button>
+                </div>
+              </div>
+            )}
             {kpiDialogType === 'competitions' && (
               <Table>
                 <TableHeader>
@@ -1290,7 +1370,7 @@ export default function Index461() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {kpiDialogData.map((item, index) => {
+                  {kpiDialogData.slice(kpiDialogPage * kpiDialogPageSize, (kpiDialogPage + 1) * kpiDialogPageSize).map((item, index) => {
                     // Translate eventclassificationid to sport name
                     const getSportLabel = (classificationId: number | null) => {
                       const sportLabels: { [key: number]: string } = {
@@ -1333,7 +1413,7 @@ export default function Index461() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {kpiDialogData.map((item, index) => (
+                  {kpiDialogData.slice(kpiDialogPage * kpiDialogPageSize, (kpiDialogPage + 1) * kpiDialogPageSize).map((item, index) => (
                     <TableRow key={index}>
                       <TableCell>{item.personnamegiven || '-'}</TableCell>
                       <TableCell>{item.personnamefamily || '-'}</TableCell>
@@ -1360,7 +1440,7 @@ export default function Index461() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {kpiDialogData.map((item, index) => (
+                  {kpiDialogData.slice(kpiDialogPage * kpiDialogPageSize, (kpiDialogPage + 1) * kpiDialogPageSize).map((item, index) => (
                     <TableRow key={index}>
                       <TableCell>{new Date(item.eventdate).toISOString().slice(0, 10)}</TableCell>
                       <TableCell>{item.eventname}</TableCell>
