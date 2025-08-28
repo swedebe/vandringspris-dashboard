@@ -172,9 +172,6 @@ function useKPIStats(params: {
     competitions_with_participation: number;
     participants_with_start: number;
     runs_ok: number;
-    runs_didnotstart: number;
-    runs_mispunch: number;
-    runs_other: number;
   }>({
     queryKey: ["rpc_index461_stats", year, gender, disciplineIds, distances, forms],
     queryFn: async () => {
@@ -233,10 +230,7 @@ function useKPIStats(params: {
       return data?.[0] || {
         competitions_with_participation: 0,
         participants_with_start: 0,
-        runs_ok: 0,
-        runs_didnotstart: 0,
-        runs_mispunch: 0,
-        runs_other: 0
+        runs_ok: 0
       };
     },
   });
@@ -590,10 +584,7 @@ export default function Index461() {
   const { data: kpiStats = {
     competitions_with_participation: 0,
     participants_with_start: 0,
-    runs_ok: 0,
-    runs_didnotstart: 0,
-    runs_mispunch: 0,
-    runs_other: 0
+    runs_ok: 0
   } } = useKPIStats({
     year: selectedYear,
     gender: selectedGender,
@@ -824,40 +815,6 @@ export default function Index461() {
     }));
   };
 
-  const fetchRacesData = async (statusFilter: string[], isOtherStatus = false) => {
-    const { data, error } = await supabase.rpc('rpc_results_enriched', {
-      _club: CLUB_ID,
-      _year: selectedYear,
-      _gender: selectedGender === '__ALL__' ? null : (selectedGender === 'Damer' ? 'F' : selectedGender === 'Herrar' ? 'M' : selectedGender),
-      _age_min: null,
-      _age_max: null,
-      _only_championship: null,
-      _personid: null,
-      _limit: 10000,
-      _offset: 0
-    });
-    
-    if (error) throw error;
-
-    // Filter by status with exact matching
-    let filtered;
-    if (isOtherStatus) {
-      // For "other" status, exclude OK, DidNotStart, and MisPunch
-      filtered = (data as any[]).filter(result => 
-        !['OK', 'DidNotStart', 'MisPunch'].includes(result.resultcompetitorstatus || '')
-      );
-    } else {
-      // For specific statuses, ensure exact match (case sensitive)
-      filtered = (data as any[]).filter(result => 
-        statusFilter.includes(result.resultcompetitorstatus || '')
-      );
-    }
-
-    // Sort by eventdate ascending
-    return filtered.sort((a, b) => 
-      new Date(a.eventdate).getTime() - new Date(b.eventdate).getTime()
-    );
-  };
 
   const handleKpiClick = async (type: string, title: string) => {
     try {
@@ -869,15 +826,6 @@ export default function Index461() {
           break;
         case 'participants':
           data = await fetchParticipantsData();
-          break;
-        case 'didnotstart':
-          data = await fetchRacesData(['DidNotStart']);
-          break;
-        case 'mispunch':
-          data = await fetchRacesData(['MisPunch']); // Correct case-sensitive status
-          break;
-        case 'other':
-          data = await fetchRacesData([], true); // Use isOtherStatus flag
           break;
       }
       
@@ -1104,33 +1052,6 @@ export default function Index461() {
                   {kpiStats.runs_ok}
                 </div>
               </div>
-              <div className="space-y-1">
-                <div className="text-sm text-muted-foreground">Antal ej start</div>
-                <button 
-                  className="text-2xl font-bold underline text-primary hover:text-primary/80"
-                  onClick={() => handleKpiClick('didnotstart', 'Ej start')}
-                >
-                  {kpiStats.runs_didnotstart}
-                </button>
-              </div>
-              <div className="space-y-1">
-                <div className="text-sm text-muted-foreground">Antal felstämplade</div>
-                <button 
-                  className="text-2xl font-bold underline text-primary hover:text-primary/80"
-                  onClick={() => handleKpiClick('mispunch', 'Felstämplade')}
-                >
-                  {kpiStats.runs_mispunch}
-                </button>
-              </div>
-              <div className="space-y-1">
-                <div className="text-sm text-muted-foreground">Antal övrig status</div>
-                <button 
-                  className="text-2xl font-bold underline text-primary hover:text-primary/80"
-                  onClick={() => handleKpiClick('other', 'Övrig status')}
-                >
-                  {kpiStats.runs_other}
-                </button>
-              </div>
             </div>
           </CardContent>
         </Card>
@@ -1347,32 +1268,6 @@ export default function Index461() {
               </Table>
             )}
             
-            {(['didnotstart', 'mispunch', 'other'].includes(kpiDialogType)) && (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Datum</TableHead>
-                    <TableHead>Tävlingsnamn</TableHead>
-                    <TableHead>Förnamn</TableHead>
-                    <TableHead>Efternamn</TableHead>
-                    <TableHead>Organisations ID</TableHead>
-                    <TableHead>Resultatstatus</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {kpiDialogData.map((item, index) => (
-                    <TableRow key={index}>
-                      <TableCell>{new Date(item.eventdate).toISOString().slice(0, 10)}</TableCell>
-                      <TableCell>{item.eventname}</TableCell>
-                      <TableCell>{item.personnamegiven || '-'}</TableCell>
-                      <TableCell>{item.personnamefamily || '-'}</TableCell>
-                      <TableCell>{CLUB_ID}</TableCell>
-                      <TableCell>{item.resultcompetitorstatus || '-'}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
           </div>
         </DialogContent>
       </Dialog>
