@@ -15,6 +15,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ChevronDown } from "lucide-react";
+
 const CLUB_ID = 461;
 
 type Result = {
@@ -28,8 +29,8 @@ type Result = {
   eventform_label: string | null;
   eventform_group: string | null;
   eventyear: number | null;
-  disciplineid: number | null;
-  eventclassificationid: number | null;
+  disciplineid: number | null;            // <-- sport/disciplin
+  eventclassificationid: number | null;   // <-- klassificering
   personid: number;
   personsex: string;
   personnamegiven: string | null;
@@ -90,28 +91,24 @@ function useResults(params: {
   return useQuery<Result[]>({
     queryKey: ["rpc_index461", club, year, gender, disciplineIds, onlyChampionship, ageMin, ageMax, distances, forms],
     queryFn: async () => {
-      // Build RPC parameters for server-side filtering
       const rpcParams: any = {
         limit_rows: 500,
         offset_rows: 0
       };
 
-      // Year filter - single year only
       if (year !== null) {
         rpcParams.years = [year];
       }
 
-      // Distances filter - map UI values to database values
       if (!distances.includes('__ALL__') && distances.length > 0) {
         const distanceMap: { [key: string]: string } = {
           'Lång': 'Long',
-          'Medel': 'Middle', 
+          'Medel': 'Middle',
           'Sprint': 'Sprint'
         };
         rpcParams.distances = distances.map(d => distanceMap[d] || d);
       }
 
-      // Forms filter - map UI values to database values
       if (!forms.includes('__ALL__') && forms.length > 0) {
         const formMap: { [key: string]: string } = {
           'Stafett': 'RelaySingleDay',
@@ -121,12 +118,10 @@ function useResults(params: {
         rpcParams.form_groups = forms.map(f => formMap[f] || f);
       }
 
-      // Disciplines filter
       if (!disciplineIds.includes(-1) && disciplineIds.length > 0) {
         rpcParams.discipline_ids = disciplineIds.filter(id => id !== -1);
       }
 
-      // Gender filter - map UI value to database value
       if (gender !== '__ALL__') {
         const genderMap: { [key: string]: string } = {
           'Damer': 'F',
@@ -149,7 +144,6 @@ function useResults(params: {
 function groupByPerson(results: Result[]) {
   const map = new Map<number, { name: string; items: Result[] }>();
   for (const r of results) {
-    // Show names from the view, fallback to '-' if both null
     const given = r.personnamegiven || '';
     const family = r.personnamefamily || '';
     const name = given || family ? `${given} ${family}`.trim() : '-';
@@ -159,7 +153,6 @@ function groupByPerson(results: Result[]) {
   return map;
 }
 
-// Hook for KPI stats using rpc_index461_stats
 function useKPIStats(params: {
   year?: number | null;
   gender?: string;
@@ -180,22 +173,21 @@ function useKPIStats(params: {
     queryFn: async () => {
       const rpcParams: any = {};
 
-      // Build same parameters as main query
       if (year !== null) {
-        rpcParams.year = year; // Note: single year for stats RPC
+        rpcParams.year = year;
       }
-      
+
       if (!distances.includes('__ALL__') && distances.length > 0) {
         const distanceMap: { [key: string]: string } = {
           'Lång': 'Long',
-          'Medel': 'Middle', 
+          'Medel': 'Middle',
           'Sprint': 'Sprint'
         };
         rpcParams.distances = distances.map(d => distanceMap[d] || d);
       } else {
         rpcParams.distances = [];
       }
-      
+
       if (!forms.includes('__ALL__') && forms.length > 0) {
         const formMap: { [key: string]: string } = {
           'Stafett': 'RelaySingleDay',
@@ -206,13 +198,13 @@ function useKPIStats(params: {
       } else {
         rpcParams.form_groups = [];
       }
-      
+
       if (!disciplineIds.includes(-1) && disciplineIds.length > 0) {
         rpcParams.discipline_ids = disciplineIds.filter(id => id !== -1);
       } else {
         rpcParams.discipline_ids = [];
       }
-      
+
       if (gender !== '__ALL__') {
         const genderMap: { [key: string]: string } = {
           'Damer': 'F',
@@ -242,7 +234,6 @@ function useKPIStats(params: {
   });
 }
 
-// Hook for top competitors using rpc_index461_top_competitors  
 function useTopCompetitors(params: {
   year?: number | null;
   gender?: string;
@@ -259,22 +250,21 @@ function useTopCompetitors(params: {
         limit_rows: limit
       };
 
-      // Build same parameters as main query
       if (year !== null) {
-        rpcParams.year = year; // Note: single year for top competitors RPC
+        rpcParams.year = year;
       }
-      
+
       if (!distances.includes('__ALL__') && distances.length > 0) {
         const distanceMap: { [key: string]: string } = {
           'Lång': 'Long',
-          'Medel': 'Middle', 
+          'Medel': 'Middle',
           'Sprint': 'Sprint'
         };
         rpcParams.distances = distances.map(d => distanceMap[d] || d);
       } else {
         rpcParams.distances = [];
       }
-      
+
       if (!forms.includes('__ALL__') && forms.length > 0) {
         const formMap: { [key: string]: string } = {
           'Stafett': 'RelaySingleDay',
@@ -285,13 +275,13 @@ function useTopCompetitors(params: {
       } else {
         rpcParams.form_groups = [];
       }
-      
+
       if (!disciplineIds.includes(-1) && disciplineIds.length > 0) {
         rpcParams.discipline_ids = disciplineIds.filter(id => id !== -1);
       } else {
         rpcParams.discipline_ids = [];
       }
-      
+
       if (gender !== '__ALL__') {
         const genderMap: { [key: string]: string } = {
           'Damer': 'F',
@@ -314,7 +304,6 @@ function useTopCompetitors(params: {
   });
 }
 
-// Hook for competitions count by year (not needed for single year, but keeping for consistency)
 function useCompetitionsByYear(params: {
   year?: number | null;
   gender?: string;
@@ -328,20 +317,19 @@ function useCompetitionsByYear(params: {
     queryFn: async () => {
       const rpcParams: any = {};
 
-      // Build same parameters as main query
       if (year !== null) {
         rpcParams.years = [year];
       }
-      
+
       if (!distances.includes('__ALL__') && distances.length > 0) {
         const distanceMap: { [key: string]: string } = {
           'Lång': 'Long',
-          'Medel': 'Middle', 
+          'Medel': 'Middle',
           'Sprint': 'Sprint'
         };
         rpcParams.distances = distances.map(d => distanceMap[d] || d);
       }
-      
+
       if (!forms.includes('__ALL__') && forms.length > 0) {
         const formMap: { [key: string]: string } = {
           'Stafett': 'RelaySingleDay',
@@ -350,11 +338,11 @@ function useCompetitionsByYear(params: {
         };
         rpcParams.form_groups = forms.map(f => formMap[f] || f);
       }
-      
+
       if (!disciplineIds.includes(-1) && disciplineIds.length > 0) {
         rpcParams.discipline_ids = disciplineIds.filter(id => id !== -1);
       }
-      
+
       if (gender !== '__ALL__') {
         const genderMap: { [key: string]: string } = {
           'Damer': 'F',
@@ -454,7 +442,6 @@ export default function Index461() {
     "button.updatePersons",
     "button.updateEvents",
     "button.updateResults",
-    // Table titles and labels
     "table.mostRaces.title",
     "table.mostPoints.title",
     "table.top5.title",
@@ -473,11 +460,10 @@ export default function Index461() {
   const { data: years = [] } = useYears(CLUB_ID);
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
   const [selectedGender, setSelectedGender] = useState<string>('__ALL__');
-  const [selectedDisciplines, setSelectedDisciplines] = useState<number[]>([1]); // Default to Fot-OL
+  const [selectedDisciplines, setSelectedDisciplines] = useState<number[]>([1]); // Default Fot-OL
   const [distances, setDistances] = useState<string[]>(['__ALL__']);
   const [forms, setForms] = useState<string[]>(['__ALL__']);
 
-  // Set default to the latest available year when data arrives
   useEffect(() => {
     if (years.length && selectedYear === null) {
       const maxYear = Math.max(...years);
@@ -487,96 +473,56 @@ export default function Index461() {
 
   const { data: clubName = "" } = useClubName(CLUB_ID);
 
-  // Translation mappings
-  const distanceLabels = {
-    'Long': 'Lång',
-    'Middle': 'Medel', 
-    'Sprint': 'Sprint'
-  };
+  const distanceLabels = { 'Long': 'Lång', 'Middle': 'Medel', 'Sprint': 'Sprint' };
+  const formLabels = { 'RelaySingleDay': 'Stafett', 'IndMultiDay': 'Flerdagars', '__NULL__': 'Individuell' };
+  const genderLabels = { 'Alla': 'Alla', 'Damer': 'Damer', 'Herrar': 'Herrar' };
+  const disciplineLabels = { 1: 'Fot-OL', 2: 'MTBO', 3: 'SkidO', 4: 'Pre-O', 7: 'OL-skytte', 8: 'Indoor' };
 
-  const formLabels = {
-    'RelaySingleDay': 'Stafett',
-    'IndMultiDay': 'Flerdagars',
-    '__NULL__': 'Individuell'
-  };
-
-  const genderLabels = {
-    'Alla': 'Alla',
-    'Damer': 'Damer',
-    'Herrar': 'Herrar'
-  };
-
-  const disciplineLabels = {
-    1: 'Fot-OL',
-    2: 'MTBO',
-    3: 'SkidO',
-    4: 'Pre-O',
-    7: 'OL-skytte',
-    8: 'Indoor'
-  };
-
-  // Year selection (single select)
-  const handleYearSelection = (year: number) => {
-    setSelectedYear(year);
-  };
-
-  // Gender selection (single select)
-  const handleGenderSelection = (gender: string) => {
-    setSelectedGender(gender);
-  };
+  const handleYearSelection = (year: number) => setSelectedYear(year);
+  const handleGenderSelection = (gender: string) => setSelectedGender(gender);
 
   const toggleDisciplineSelection = (disciplineId: number) => {
-    if (disciplineId === -1) { // "__ALL__" equivalent for disciplines
-      setSelectedDisciplines([-1]);
-    } else {
-      const newDisciplines = selectedDisciplines.includes(-1) 
+    if (disciplineId === -1) { setSelectedDisciplines([-1]); }
+    else {
+      const newDisciplines = selectedDisciplines.includes(-1)
         ? [disciplineId]
         : selectedDisciplines.includes(disciplineId)
           ? selectedDisciplines.filter(d => d !== disciplineId)
           : [...selectedDisciplines, disciplineId];
-      
       setSelectedDisciplines(newDisciplines.length === 0 ? [-1] : newDisciplines);
     }
   };
 
   const toggleDistanceSelection = (distance: string) => {
-    if (distance === '__ALL__') {
-      setDistances(['__ALL__']);
-    } else {
-      const newDistances = distances.includes('__ALL__') 
+    if (distance === '__ALL__') setDistances(['__ALL__']);
+    else {
+      const newDistances = distances.includes('__ALL__')
         ? [distance]
         : distances.includes(distance)
           ? distances.filter(d => d !== distance)
           : [...distances, distance];
-      
       setDistances(newDistances.length === 0 ? ['__ALL__'] : newDistances);
     }
   };
 
   const toggleFormSelection = (form: string) => {
-    if (form === '__ALL__') {
-      setForms(['__ALL__']);
-    } else {
+    if (form === '__ALL__') setForms(['__ALL__']);
+    else {
       const newForms = forms.includes('__ALL__')
         ? [form]
         : forms.includes(form)
           ? forms.filter(f => f !== form)
           : [...forms, form];
-      
       setForms(newForms.length === 0 ? ['__ALL__'] : newForms);
     }
   };
 
-  const formatDistanceLabel = (distance: string) => {
-    return distanceLabels[distance as keyof typeof distanceLabels] || distance;
-  };
+  const formatDistanceLabel = (distance: string) =>
+    distanceLabels[distance as keyof typeof distanceLabels] || distance;
 
-  const formatFormLabel = (form: string | null) => {
-    if (form === null) return formLabels['__NULL__'];
-    return formLabels[form as keyof typeof formLabels] || form;
-  };
+  const formatFormLabel = (form: string | null) =>
+    form === null ? formLabels['__NULL__'] : (formLabels[form as keyof typeof formLabels] || form);
 
-  // Base filtered results for common filters (only OK status for points tables)
   const { data: baseResults = [], isLoading } = useResults({
     club: CLUB_ID,
     year: selectedYear,
@@ -586,7 +532,6 @@ export default function Index461() {
     forms: forms,
   });
 
-  // KPI stats data
   const { data: kpiStats = {
     competitions_with_participation: 0,
     participants_with_start: 0,
@@ -602,7 +547,6 @@ export default function Index461() {
     forms: forms,
   });
 
-  // Top competitors data (for "Flest tävlingar" table)
   const { data: topCompetitors = [] } = useTopCompetitors({
     year: selectedYear,
     gender: selectedGender,
@@ -620,23 +564,21 @@ export default function Index461() {
     forms: forms,
   });
 
-  // Derived datasets for each table
   const rowsMostRaces = useMemo(() => {
-    // Use the RPC data for most races (includes OK and Mispunch statuses)
     return topCompetitors.map(competitor => ({
       personid: competitor.personid,
       name: `${competitor.personnamegiven || ''} ${competitor.personnamefamily || ''}`.trim() || '-',
       value: competitor.competitions_count,
-      usedItems: baseResults.filter(r => 
-        r.personid === competitor.personid && 
-        ['OK', 'Mispunch'].includes(r.resultcompetitorstatus || '')
+      // FIX: include OK and MisPunch (correct casing)
+      usedItems: baseResults.filter(r =>
+        r.personid === competitor.personid &&
+        ['OK', 'MisPunch'].includes((r.resultcompetitorstatus || '').trim())
       ),
     }));
   }, [topCompetitors, baseResults]);
 
   const makeTopPointsRows = (n: number, ageMin: number | null, ageMax: number | null, onlyChampionship?: boolean) => {
     const filtered = baseResults.filter((r) => {
-      // Only include OK status for points calculations
       if (r.resultcompetitorstatus !== 'OK') return false;
       if (onlyChampionship && r.eventclassificationid !== 1) return false;
       if (ageMin !== null && (r.personage ?? 0) < ageMin) return false;
@@ -645,7 +587,6 @@ export default function Index461() {
     });
     const groups = groupByPerson(filtered);
     const rows = Array.from(groups.entries()).map(([personid, { name, items }]) => {
-      // top-N by points per person
       const topItems = items
         .filter((i) => typeof i.points === "number")
         .sort((a, b) => (b.points ?? 0) - (a.points ?? 0))
@@ -657,7 +598,6 @@ export default function Index461() {
   };
 
   const rowsMostPointsAll = useMemo(() => {
-    // Only include OK status for points calculations
     const filtered = baseResults.filter(r => r.resultcompetitorstatus === 'OK');
     const groups = groupByPerson(filtered);
     const rows = Array.from(groups.entries()).map(([personid, { name, items }]) => ({
@@ -678,12 +618,10 @@ export default function Index461() {
   const rowsTop10_60_99 = useMemo(() => makeTopPointsRows(10, 60, 99), [baseResults]);
   const rowsChampionship = useMemo(() => makeTopPointsRows(9999, null, null, true), [baseResults]);
 
-  // Drilldown state
   const [drillOpen, setDrillOpen] = useState(false);
   const [drillTitle, setDrillTitle] = useState("");
   const [drillItems, setDrillItems] = useState<Result[]>([]);
 
-  // KPI popup states
   const [kpiDialogOpen, setKpiDialogOpen] = useState(false);
   const [kpiDialogTitle, setKpiDialogTitle] = useState("");
   const [kpiDialogData, setKpiDialogData] = useState<any[]>([]);
@@ -697,7 +635,6 @@ export default function Index461() {
     setDrillOpen(true);
   };
 
-  // Shared function to build RPC parameters (ensures consistency between KPI stats and popup data)
   const buildRpcParams = () => {
     const params: any = {
       _club: CLUB_ID,
@@ -706,134 +643,112 @@ export default function Index461() {
       _only_championship: null,
       _personid: null
     };
-    
-    // Year filter - only include if specific year selected (not "All years")
+
     if (selectedYear !== null) {
       params._year = selectedYear;
     }
-    
-    // Gender filter - map UI values to database values
+
     if (selectedGender && selectedGender !== '__ALL__') {
-      const genderMap: { [key: string]: string } = {
-        'Damer': 'F',
-        'Herrar': 'M'
-      };
+      const genderMap: { [key: string]: string } = { 'Damer': 'F', 'Herrar': 'M' };
       params._gender = genderMap[selectedGender] || selectedGender;
     }
-    
-    // Disciplines filter - build array if specific disciplines selected
+
     if (!selectedDisciplines.includes(-1) && selectedDisciplines.length > 0) {
-      // Note: rpc_results_enriched doesn't support discipline filtering directly
-      // This would need custom filtering on the client side
       params.discipline_ids = selectedDisciplines.filter(id => id !== -1);
     }
-    
-    // Distances filter - build array if specific distances selected
+
     if (!distances.includes('__ALL__') && distances.length > 0) {
-      const distanceMap: { [key: string]: string } = {
-        'Lång': 'Long',
-        'Medel': 'Middle', 
-        'Sprint': 'Sprint'
-      };
+      const distanceMap: { [key: string]: string } = { 'Lång': 'Long', 'Medel': 'Middle', 'Sprint': 'Sprint' };
       params.distances = distances.map(d => distanceMap[d] || d);
     }
-    
-    // Forms filter - build array if specific forms selected
+
     if (!forms.includes('__ALL__') && forms.length > 0) {
-      const formMap: { [key: string]: string } = {
-        'Stafett': 'RelaySingleDay',
-        'Flerdagars': 'IndMultiDay',
-        'Individuell': '__NULL__'
-      };
+      const formMap: { [key: string]: string } = { 'Stafett': 'RelaySingleDay', 'Flerdagars': 'IndMultiDay', 'Individuell': '__NULL__' };
       params.form_groups = forms.map(f => formMap[f] || f);
     }
-    
+
     return params;
   };
 
-  // Helper function to fetch all results in batches (removes limit cap)
   const fetchAllResults = async () => {
-    const allData = [];
+    const allData: Result[] = [];
     let offset = 0;
-    const batchSize = 50000; // Large batch size for efficiency
-    
+    const batchSize = 50000;
+
     while (true) {
-      const rpcParams = {
-        ...buildRpcParams(),
-        _limit: batchSize,
-        _offset: offset
-      };
-      
+      const rpcParams = { ...buildRpcParams(), _limit: batchSize, _offset: offset };
       const { data: batch, error } = await supabase.rpc('rpc_results_enriched', rpcParams);
       if (error) throw error;
-      
       if (!batch || batch.length === 0) break;
-      allData.push(...batch);
-      
-      if (batch.length < batchSize) break; // Last batch
+
+      allData.push(...(batch as Result[]));
+      if (batch.length < batchSize) break;
       offset += batchSize;
     }
-    
+
     return allData;
   };
 
-  // KPI data fetching functions
-  const fetchCompetitionsData = async () => {
-    // Fetch all data with same filters as KPI stats
-    const allData = await fetchAllResults();
-    
-    // Apply client-side filtering for disciplines if needed
-    let filteredData = allData;
+  // -------- FIXES BELOW: use disciplineid for client-side discipline filtering --------
+  const applyClientFilters = (data: Result[]) => {
+    let filtered = data;
+
     if (!selectedDisciplines.includes(-1) && selectedDisciplines.length > 0) {
-      filteredData = allData.filter(result => 
-        selectedDisciplines.includes(result.eventclassificationid)
-      );
+      // FIX: filter by disciplineid (NOT eventclassificationid)
+      filtered = filtered.filter(result => selectedDisciplines.includes(result.disciplineid ?? -9999));
     }
-    
-    // Apply client-side filtering for distances if needed  
+
     if (!distances.includes('__ALL__') && distances.length > 0) {
       const distanceMap = { 'Lång': 'Long', 'Medel': 'Middle', 'Sprint': 'Sprint' };
       const mappedDistances = distances.map(d => distanceMap[d] || d);
-      filteredData = filteredData.filter(result => 
-        mappedDistances.includes(result.eventdistance)
-      );
+      filtered = filtered.filter(result => mappedDistances.includes(result.eventdistance || ''));
     }
-    
-    // Apply client-side filtering for forms if needed
+
     if (!forms.includes('__ALL__') && forms.length > 0) {
-      const formMap = { 'Stafett': 'RelaySingleDay', 'Flerdagars': 'IndMultiDay', 'Individuell': null };
-      const mappedForms = forms.map(f => formMap[f] !== undefined ? formMap[f] : f);
-      filteredData = filteredData.filter(result => 
-        mappedForms.includes(result.eventform) || 
-        (mappedForms.includes(null) && !result.eventform)
+      const formMap: Record<string, string | null> = { 'Stafett': 'RelaySingleDay', 'Flerdagars': 'IndMultiDay', 'Individuell': null };
+      const mappedForms = forms.map(f => (formMap[f] !== undefined ? formMap[f] : f)) as (string | null)[];
+      filtered = filtered.filter(result =>
+        mappedForms.includes(result.eventform) || (mappedForms.includes(null) && !result.eventform)
       );
     }
-    
-    // Get unique competitions (DISTINCT by eventraceid)
-    const uniqueCompetitions = new Map();
-    
-    // Get event organiser data for all competitions
+
+    return filtered;
+  };
+  // -----------------------------------------------------------------------------------
+
+  const fetchCompetitionsData = async () => {
+    const allData = await fetchAllResults();
+    const filteredData = applyClientFilters(allData);
+
+    const uniqueCompetitions = new Map<number, {
+      eventdate: string;
+      eventname: string;
+      eventorganiser: string;
+      disciplineid: number | null;
+      eventclassificationid: number | null;
+      eventform: string | null;
+      eventdistance: string | null;
+    }>();
+
     const eventRaceIds = [...new Set(filteredData.map(r => r.eventraceid))];
     const { data: eventsData, error: eventsError } = await supabase
       .from('events')
       .select('eventraceid, eventorganiser')
       .in('eventraceid', eventRaceIds);
-    
+
     if (eventsError) throw eventsError;
-    
-    const eventOrganiserMap = new Map();
-    eventsData.forEach(event => {
-      eventOrganiserMap.set(event.eventraceid, event.eventorganiser);
-    });
+
+    const eventOrganiserMap = new Map<number, string>();
+    (eventsData || []).forEach(evt => eventOrganiserMap.set(evt.eventraceid, evt.eventorganiser));
 
     filteredData.forEach(result => {
-      const competitionKey = result.eventraceid;
-      if (!uniqueCompetitions.has(competitionKey)) {
-        uniqueCompetitions.set(competitionKey, {
+      const key = result.eventraceid;
+      if (!uniqueCompetitions.has(key)) {
+        uniqueCompetitions.set(key, {
           eventdate: result.eventdate,
           eventname: result.eventname,
           eventorganiser: eventOrganiserMap.get(result.eventraceid) || '',
-          disciplineid: result.eventclassificationid, // Use classification as sport type  
+          disciplineid: result.disciplineid,                 // FIX: correct field
           eventclassificationid: result.eventclassificationid,
           eventform: result.eventform,
           eventdistance: result.eventdistance
@@ -841,45 +756,23 @@ export default function Index461() {
       }
     });
 
-    // Sort by eventdate ascending (January first)
-    return Array.from(uniqueCompetitions.values()).sort((a, b) => 
-      new Date(a.eventdate).getTime() - new Date(b.eventdate).getTime()
-    );
+    return Array.from(uniqueCompetitions.values())
+      .sort((a, b) => new Date(a.eventdate).getTime() - new Date(b.eventdate).getTime());
   };
 
   const fetchParticipantsData = async () => {
-    // Fetch all data with same filters as KPI stats
     const allData = await fetchAllResults();
-    
-    // Apply client-side filtering for disciplines if needed
-    let filteredData = allData;
-    if (!selectedDisciplines.includes(-1) && selectedDisciplines.length > 0) {
-      filteredData = allData.filter(result => 
-        selectedDisciplines.includes(result.eventclassificationid)
-      );
-    }
-    
-    // Apply client-side filtering for distances if needed
-    if (!distances.includes('__ALL__') && distances.length > 0) {
-      const distanceMap = { 'Lång': 'Long', 'Medel': 'Middle', 'Sprint': 'Sprint' };
-      const mappedDistances = distances.map(d => distanceMap[d] || d);
-      filteredData = filteredData.filter(result => 
-        mappedDistances.includes(result.eventdistance)
-      );
-    }
-    
-    // Apply client-side filtering for forms if needed
-    if (!forms.includes('__ALL__') && forms.length > 0) {
-      const formMap = { 'Stafett': 'RelaySingleDay', 'Flerdagars': 'IndMultiDay', 'Individuell': null };
-      const mappedForms = forms.map(f => formMap[f] !== undefined ? formMap[f] : f);
-      filteredData = filteredData.filter(result => 
-        mappedForms.includes(result.eventform) || 
-        (mappedForms.includes(null) && !result.eventform)
-      );
-    }
+    const filteredData = applyClientFilters(allData);
 
-    // Get unique person IDs with at least 1 start (status != 'DidNotStart')
-    const uniquePersons = new Map();
+    const uniquePersons = new Map<number, {
+      personid: number;
+      personnamegiven: string | null;
+      personnamefamily: string | null;
+      personsex: string;
+      organisationid: number;
+      birthYear: number | null;
+    }>();
+
     filteredData.forEach(result => {
       const status = (result.resultcompetitorstatus || '').trim();
       if (status !== 'DidNotStart') {
@@ -889,37 +782,34 @@ export default function Index461() {
             personnamegiven: result.personnamegiven,
             personnamefamily: result.personnamefamily,
             personsex: result.personsex,
-            organisationid: CLUB_ID, // From club filter
-            birthYear: null // Will be filled from persons table
+            organisationid: CLUB_ID,
+            birthYear: null
           });
         }
       }
     });
 
-    // Get birth years from persons table
     const personIds = Array.from(uniquePersons.keys());
     if (personIds.length > 0) {
       const { data: personsData, error: personsError } = await supabase
         .from('persons')
         .select('personid, personbirthdate')
         .in('personid', personIds);
-      
+
       if (personsError) throw personsError;
-      
-      personsData.forEach(person => {
-        if (uniquePersons.has(person.personid)) {
-          const existingPerson = uniquePersons.get(person.personid);
-          existingPerson.birthYear = person.personbirthdate ? new Date(person.personbirthdate).getFullYear() : null;
+
+      (personsData || []).forEach(person => {
+        const existing = uniquePersons.get(person.personid);
+        if (existing) {
+          existing.birthYear = person.personbirthdate ? new Date(person.personbirthdate).getFullYear() : null;
         }
       });
     }
 
-    // Sort by family name, then given name (ascending)
     return Array.from(uniquePersons.values()).sort((a, b) => {
       const familyA = (a.personnamefamily || '').toLowerCase();
       const familyB = (b.personnamefamily || '').toLowerCase();
       if (familyA !== familyB) return familyA.localeCompare(familyB);
-      
       const givenA = (a.personnamegiven || '').toLowerCase();
       const givenB = (b.personnamegiven || '').toLowerCase();
       return givenA.localeCompare(givenB);
@@ -927,62 +817,29 @@ export default function Index461() {
   };
 
   const fetchRacesData = async (statusFilter: string[], isOtherStatus = false) => {
-    // Fetch all data with same filters as KPI stats
     const allData = await fetchAllResults();
-    
-    // Apply client-side filtering for disciplines if needed
-    let filteredData = allData;
-    if (!selectedDisciplines.includes(-1) && selectedDisciplines.length > 0) {
-      filteredData = allData.filter(result => 
-        selectedDisciplines.includes(result.eventclassificationid)
-      );
-    }
-    
-    // Apply client-side filtering for distances if needed
-    if (!distances.includes('__ALL__') && distances.length > 0) {
-      const distanceMap = { 'Lång': 'Long', 'Medel': 'Middle', 'Sprint': 'Sprint' };
-      const mappedDistances = distances.map(d => distanceMap[d] || d);
-      filteredData = filteredData.filter(result => 
-        mappedDistances.includes(result.eventdistance)
-      );
-    }
-    
-    // Apply client-side filtering for forms if needed
-    if (!forms.includes('__ALL__') && forms.length > 0) {
-      const formMap = { 'Stafett': 'RelaySingleDay', 'Flerdagars': 'IndMultiDay', 'Individuell': null };
-      const mappedForms = forms.map(f => formMap[f] !== undefined ? formMap[f] : f);
-      filteredData = filteredData.filter(result => 
-        mappedForms.includes(result.eventform) || 
-        (mappedForms.includes(null) && !result.eventform)
-      );
-    }
+    let filteredData = applyClientFilters(allData);
 
-    // Normalize and filter by status with exact matching
-    let statusFiltered;
+    let statusFiltered: Result[];
     if (isOtherStatus) {
-      // For "other" status, exclude OK, DidNotStart, and MisPunch (exact case)
       statusFiltered = filteredData.filter(result => {
         const status = (result.resultcompetitorstatus || '').trim();
         return !['OK', 'DidNotStart', 'MisPunch'].includes(status);
       });
     } else {
-      // For specific statuses, ensure exact match (case sensitive, trimmed)
       statusFiltered = filteredData.filter(result => {
         const status = (result.resultcompetitorstatus || '').trim();
         return statusFilter.includes(status);
       });
     }
 
-    // Sort by eventdate ascending (January first)
-    return statusFiltered.sort((a, b) => 
-      new Date(a.eventdate).getTime() - new Date(b.eventdate).getTime()
-    );
+    return statusFiltered.sort((a, b) => new Date(a.eventdate).getTime() - new Date(b.eventdate).getTime());
   };
 
   const handleKpiClick = async (type: string, title: string) => {
     try {
       let data: any[] = [];
-      
+
       switch (type) {
         case 'competitions':
           data = await fetchCompetitionsData();
@@ -994,17 +851,17 @@ export default function Index461() {
           data = await fetchRacesData(['DidNotStart']);
           break;
         case 'mispunch':
-          data = await fetchRacesData(['MisPunch']); // Exact case-sensitive status
+          data = await fetchRacesData(['MisPunch']); // correct case
           break;
         case 'other':
-          data = await fetchRacesData([], true); // Use isOtherStatus flag
+          data = await fetchRacesData([], true);
           break;
       }
-      
+
       setKpiDialogTitle(title);
       setKpiDialogData(data);
       setKpiDialogType(type);
-      setKpiDialogPage(0); // Reset to first page
+      setKpiDialogPage(0);
       setKpiDialogOpen(true);
     } catch (error) {
       toast({ title: "Error", description: "Failed to fetch data", variant: "destructive" });
@@ -1030,7 +887,6 @@ export default function Index461() {
       toast({ title: `${label} misslyckades`, description: e.message, variant: "destructive" });
     }
   };
-
 
   return (
     <main className="container mx-auto p-4 space-y-6">
@@ -1397,7 +1253,6 @@ export default function Index461() {
             <DialogTitle>{kpiDialogTitle} ({kpiDialogData.length} resultat)</DialogTitle>
           </DialogHeader>
           <div className="flex-1 overflow-y-auto overflow-x-auto min-h-0">
-            {/* Pagination Controls */}
             {kpiDialogData.length > kpiDialogPageSize && (
               <div className="flex justify-between items-center p-4 border-b bg-background">
                 <div className="text-sm text-muted-foreground">
@@ -1426,6 +1281,7 @@ export default function Index461() {
                 </div>
               </div>
             )}
+
             {kpiDialogType === 'competitions' && (
               <Table>
                 <TableHeader>
@@ -1441,7 +1297,6 @@ export default function Index461() {
                 </TableHeader>
                 <TableBody>
                   {kpiDialogData.slice(kpiDialogPage * kpiDialogPageSize, (kpiDialogPage + 1) * kpiDialogPageSize).map((item, index) => {
-                    // Translate eventclassificationid to sport name
                     const getSportLabel = (classificationId: number | null) => {
                       const sportLabels: { [key: number]: string } = {
                         1: 'Fot-OL',
@@ -1453,7 +1308,7 @@ export default function Index461() {
                       };
                       return classificationId ? sportLabels[classificationId] || classificationId.toString() : '-';
                     };
-                    
+
                     return (
                       <TableRow key={index}>
                         <TableCell>{new Date(item.eventdate).toISOString().slice(0, 10)}</TableCell>
@@ -1469,7 +1324,7 @@ export default function Index461() {
                 </TableBody>
               </Table>
             )}
-            
+
             {kpiDialogType === 'participants' && (
               <Table>
                 <TableHeader>
@@ -1496,7 +1351,7 @@ export default function Index461() {
                 </TableBody>
               </Table>
             )}
-            
+
             {(['didnotstart', 'mispunch', 'other'].includes(kpiDialogType)) && (
               <Table>
                 <TableHeader>
