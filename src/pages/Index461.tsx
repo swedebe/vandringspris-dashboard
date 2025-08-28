@@ -697,52 +697,71 @@ export default function Index461() {
     setDrillOpen(true);
   };
 
-  // Shared function to build RPC parameters (ensures consistency)
+  // Shared function to build RPC parameters (ensures consistency between KPI stats and popup data)
   const buildRpcParams = () => {
-    const params: any = {};
+    const params: any = {
+      _club: CLUB_ID,
+      _age_min: null,
+      _age_max: null,
+      _only_championship: null,
+      _personid: null
+    };
     
-    // Year filter - exclude if "All years" selected (null)
+    // Year filter - only include if specific year selected (not "All years")
     if (selectedYear !== null) {
       params._year = selectedYear;
     }
     
-    // Gender filter - convert to proper values
-    if (selectedGender !== '__ALL__') {
+    // Gender filter - map UI values to database values
+    if (selectedGender && selectedGender !== '__ALL__') {
       const genderMap: { [key: string]: string } = {
         'Damer': 'F',
         'Herrar': 'M'
       };
-      const mappedGender = genderMap[selectedGender] || selectedGender;
-      if (mappedGender !== '__ALL__') {
-        params._gender = mappedGender;
-      }
+      params._gender = genderMap[selectedGender] || selectedGender;
     }
     
-    // Disciplines filter - convert to array if needed
+    // Disciplines filter - build array if specific disciplines selected
     if (!selectedDisciplines.includes(-1) && selectedDisciplines.length > 0) {
-      // For rpc_results_enriched, we need to pass individual filters
-      // This would need to be handled differently if we had discipline filtering
+      // Note: rpc_results_enriched doesn't support discipline filtering directly
+      // This would need custom filtering on the client side
+      params.discipline_ids = selectedDisciplines.filter(id => id !== -1);
     }
     
-    // Distance and form filters would be handled here if needed for rpc_results_enriched
-    // Currently rpc_results_enriched doesn't support these filters directly
+    // Distances filter - build array if specific distances selected
+    if (!distances.includes('__ALL__') && distances.length > 0) {
+      const distanceMap: { [key: string]: string } = {
+        'Lång': 'Long',
+        'Medel': 'Middle', 
+        'Sprint': 'Sprint'
+      };
+      params.distances = distances.map(d => distanceMap[d] || d);
+    }
+    
+    // Forms filter - build array if specific forms selected
+    if (!forms.includes('__ALL__') && forms.length > 0) {
+      const formMap: { [key: string]: string } = {
+        'Stafett': 'RelaySingleDay',
+        'Flerdagars': 'IndMultiDay',
+        'Individuell': '__NULL__'
+      };
+      params.form_groups = forms.map(f => formMap[f] || f);
+    }
     
     return params;
   };
 
-  // KPI data fetching functions
-  const fetchCompetitionsData = async () => {
-    // Fetch all data without limits and with same filters as KPI stats
+  // Helper function to fetch all results in batches (removes limit cap)
+  const fetchAllResults = async () => {
     const allData = [];
     let offset = 0;
-    const batchSize = 10000;
+    const batchSize = 50000; // Large batch size for efficiency
     
     while (true) {
       const rpcParams = {
-        _club: CLUB_ID,
+        ...buildRpcParams(),
         _limit: batchSize,
-        _offset: offset,
-        ...buildRpcParams()
+        _offset: offset
       };
       
       const { data: batch, error } = await supabase.rpc('rpc_results_enriched', rpcParams);
@@ -755,11 +774,46 @@ export default function Index461() {
       offset += batchSize;
     }
     
+    return allData;
+  };
+
+  // KPI data fetching functions
+  const fetchCompetitionsData = async () => {
+    // Fetch all data with same filters as KPI stats
+    const allData = await fetchAllResults();
+    
+    // Apply client-side filtering for disciplines if needed
+    let filteredData = allData;
+    if (!selectedDisciplines.includes(-1) && selectedDisciplines.length > 0) {
+      filteredData = allData.filter(result => 
+        selectedDisciplines.includes(result.eventclassificationid)
+      );
+    }
+    
+    // Apply client-side filtering for distances if needed  
+    if (!distances.includes('__ALL__') && distances.length > 0) {
+      const distanceMap = { 'Lång': 'Long', 'Medel': 'Middle', 'Sprint': 'Sprint' };
+      const mappedDistances = distances.map(d => distanceMap[d] || d);
+      filteredData = filteredData.filter(result => 
+        mappedDistances.includes(result.eventdistance)
+      );
+    }
+    
+    // Apply client-side filtering for forms if needed
+    if (!forms.includes('__ALL__') && forms.length > 0) {
+      const formMap = { 'Stafett': 'RelaySingleDay', 'Flerdagars': 'IndMultiDay', 'Individuell': null };
+      const mappedForms = forms.map(f => formMap[f] !== undefined ? formMap[f] : f);
+      filteredData = filteredData.filter(result => 
+        mappedForms.includes(result.eventform) || 
+        (mappedForms.includes(null) && !result.eventform)
+      );
+    }
+    
     // Get unique competitions (DISTINCT by eventraceid)
     const uniqueCompetitions = new Map();
     
     // Get event organiser data for all competitions
-    const eventRaceIds = [...new Set(allData.map(r => r.eventraceid))];
+    const eventRaceIds = [...new Set(filteredData.map(r => r.eventraceid))];
     const { data: eventsData, error: eventsError } = await supabase
       .from('events')
       .select('eventraceid, eventorganiser')
@@ -772,7 +826,7 @@ export default function Index461() {
       eventOrganiserMap.set(event.eventraceid, event.eventorganiser);
     });
 
-    allData.forEach(result => {
+    filteredData.forEach(result => {
       const competitionKey = result.eventraceid;
       if (!uniqueCompetitions.has(competitionKey)) {
         uniqueCompetitions.set(competitionKey, {
@@ -794,32 +848,39 @@ export default function Index461() {
   };
 
   const fetchParticipantsData = async () => {
-    // Fetch all data without limits and with same filters as KPI stats
-    const allData = [];
-    let offset = 0;
-    const batchSize = 10000;
+    // Fetch all data with same filters as KPI stats
+    const allData = await fetchAllResults();
     
-    while (true) {
-      const rpcParams = {
-        _club: CLUB_ID,
-        _limit: batchSize,
-        _offset: offset,
-        ...buildRpcParams()
-      };
-      
-      const { data: batch, error } = await supabase.rpc('rpc_results_enriched', rpcParams);
-      if (error) throw error;
-      
-      if (!batch || batch.length === 0) break;
-      allData.push(...batch);
-      
-      if (batch.length < batchSize) break; // Last batch
-      offset += batchSize;
+    // Apply client-side filtering for disciplines if needed
+    let filteredData = allData;
+    if (!selectedDisciplines.includes(-1) && selectedDisciplines.length > 0) {
+      filteredData = allData.filter(result => 
+        selectedDisciplines.includes(result.eventclassificationid)
+      );
+    }
+    
+    // Apply client-side filtering for distances if needed
+    if (!distances.includes('__ALL__') && distances.length > 0) {
+      const distanceMap = { 'Lång': 'Long', 'Medel': 'Middle', 'Sprint': 'Sprint' };
+      const mappedDistances = distances.map(d => distanceMap[d] || d);
+      filteredData = filteredData.filter(result => 
+        mappedDistances.includes(result.eventdistance)
+      );
+    }
+    
+    // Apply client-side filtering for forms if needed
+    if (!forms.includes('__ALL__') && forms.length > 0) {
+      const formMap = { 'Stafett': 'RelaySingleDay', 'Flerdagars': 'IndMultiDay', 'Individuell': null };
+      const mappedForms = forms.map(f => formMap[f] !== undefined ? formMap[f] : f);
+      filteredData = filteredData.filter(result => 
+        mappedForms.includes(result.eventform) || 
+        (mappedForms.includes(null) && !result.eventform)
+      );
     }
 
     // Get unique person IDs with at least 1 start (status != 'DidNotStart')
     const uniquePersons = new Map();
-    allData.forEach(result => {
+    filteredData.forEach(result => {
       const status = (result.resultcompetitorstatus || '').trim();
       if (status !== 'DidNotStart') {
         if (!uniquePersons.has(result.personid)) {
@@ -866,47 +927,54 @@ export default function Index461() {
   };
 
   const fetchRacesData = async (statusFilter: string[], isOtherStatus = false) => {
-    // Fetch all data without limits and with same filters as KPI stats
-    const allData = [];
-    let offset = 0;
-    const batchSize = 10000;
+    // Fetch all data with same filters as KPI stats
+    const allData = await fetchAllResults();
     
-    while (true) {
-      const rpcParams = {
-        _club: CLUB_ID,
-        _limit: batchSize,
-        _offset: offset,
-        ...buildRpcParams()
-      };
-      
-      const { data: batch, error } = await supabase.rpc('rpc_results_enriched', rpcParams);
-      if (error) throw error;
-      
-      if (!batch || batch.length === 0) break;
-      allData.push(...batch);
-      
-      if (batch.length < batchSize) break; // Last batch
-      offset += batchSize;
+    // Apply client-side filtering for disciplines if needed
+    let filteredData = allData;
+    if (!selectedDisciplines.includes(-1) && selectedDisciplines.length > 0) {
+      filteredData = allData.filter(result => 
+        selectedDisciplines.includes(result.eventclassificationid)
+      );
+    }
+    
+    // Apply client-side filtering for distances if needed
+    if (!distances.includes('__ALL__') && distances.length > 0) {
+      const distanceMap = { 'Lång': 'Long', 'Medel': 'Middle', 'Sprint': 'Sprint' };
+      const mappedDistances = distances.map(d => distanceMap[d] || d);
+      filteredData = filteredData.filter(result => 
+        mappedDistances.includes(result.eventdistance)
+      );
+    }
+    
+    // Apply client-side filtering for forms if needed
+    if (!forms.includes('__ALL__') && forms.length > 0) {
+      const formMap = { 'Stafett': 'RelaySingleDay', 'Flerdagars': 'IndMultiDay', 'Individuell': null };
+      const mappedForms = forms.map(f => formMap[f] !== undefined ? formMap[f] : f);
+      filteredData = filteredData.filter(result => 
+        mappedForms.includes(result.eventform) || 
+        (mappedForms.includes(null) && !result.eventform)
+      );
     }
 
     // Normalize and filter by status with exact matching
-    let filtered;
+    let statusFiltered;
     if (isOtherStatus) {
       // For "other" status, exclude OK, DidNotStart, and MisPunch (exact case)
-      filtered = allData.filter(result => {
+      statusFiltered = filteredData.filter(result => {
         const status = (result.resultcompetitorstatus || '').trim();
         return !['OK', 'DidNotStart', 'MisPunch'].includes(status);
       });
     } else {
       // For specific statuses, ensure exact match (case sensitive, trimmed)
-      filtered = allData.filter(result => {
+      statusFiltered = filteredData.filter(result => {
         const status = (result.resultcompetitorstatus || '').trim();
         return statusFilter.includes(status);
       });
     }
 
     // Sort by eventdate ascending (January first)
-    return filtered.sort((a, b) => 
+    return statusFiltered.sort((a, b) => 
       new Date(a.eventdate).getTime() - new Date(b.eventdate).getTime()
     );
   };
