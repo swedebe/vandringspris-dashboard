@@ -701,39 +701,12 @@ export default function Index461() {
   const buildRpcParams = () => {
     const params: any = {};
     
+    // Year filter - exclude if "All years" selected (null)
     if (selectedYear !== null) {
-      params.year = selectedYear; // For stats RPC
-      params.years = [selectedYear]; // For other RPCs
+      params._year = selectedYear;
     }
     
-    if (!distances.includes('__ALL__') && distances.length > 0) {
-      const distanceMap: { [key: string]: string } = {
-        'Lång': 'Long',
-        'Medel': 'Middle', 
-        'Sprint': 'Sprint'
-      };
-      params.distances = distances.map(d => distanceMap[d] || d);
-    } else {
-      params.distances = [];
-    }
-    
-    if (!forms.includes('__ALL__') && forms.length > 0) {
-      const formMap: { [key: string]: string } = {
-        'Stafett': 'RelaySingleDay',
-        'Flerdagars': 'IndMultiDay',
-        'Individuell': '__NULL__'
-      };
-      params.form_groups = forms.map(f => formMap[f] || f);
-    } else {
-      params.form_groups = [];
-    }
-    
-    if (!selectedDisciplines.includes(-1) && selectedDisciplines.length > 0) {
-      params.discipline_ids = selectedDisciplines.filter(id => id !== -1);
-    } else {
-      params.discipline_ids = [];
-    }
-    
+    // Gender filter - convert to proper values
     if (selectedGender !== '__ALL__') {
       const genderMap: { [key: string]: string } = {
         'Damer': 'F',
@@ -741,39 +714,52 @@ export default function Index461() {
       };
       const mappedGender = genderMap[selectedGender] || selectedGender;
       if (mappedGender !== '__ALL__') {
-        params.genders = [mappedGender];
-      } else {
-        params.genders = [];
+        params._gender = mappedGender;
       }
-    } else {
-      params.genders = [];
     }
-
+    
+    // Disciplines filter - convert to array if needed
+    if (!selectedDisciplines.includes(-1) && selectedDisciplines.length > 0) {
+      // For rpc_results_enriched, we need to pass individual filters
+      // This would need to be handled differently if we had discipline filtering
+    }
+    
+    // Distance and form filters would be handled here if needed for rpc_results_enriched
+    // Currently rpc_results_enriched doesn't support these filters directly
+    
     return params;
   };
 
   // KPI data fetching functions
   const fetchCompetitionsData = async () => {
-    // Use rpc_results_enriched with identical filters as KPI stats
-    const { data: resultsData, error: resultsError } = await supabase.rpc('rpc_results_enriched', {
-      _club: CLUB_ID,
-      _year: selectedYear,
-      _gender: selectedGender === '__ALL__' ? null : (selectedGender === 'Damer' ? 'F' : selectedGender === 'Herrar' ? 'M' : selectedGender),
-      _age_min: null,
-      _age_max: null,
-      _only_championship: null,
-      _personid: null,
-      _limit: 50000, // No silent cap - use high limit
-      _offset: 0
-    });
+    // Fetch all data without limits and with same filters as KPI stats
+    const allData = [];
+    let offset = 0;
+    const batchSize = 10000;
     
-    if (resultsError) throw resultsError;
-
+    while (true) {
+      const rpcParams = {
+        _club: CLUB_ID,
+        _limit: batchSize,
+        _offset: offset,
+        ...buildRpcParams()
+      };
+      
+      const { data: batch, error } = await supabase.rpc('rpc_results_enriched', rpcParams);
+      if (error) throw error;
+      
+      if (!batch || batch.length === 0) break;
+      allData.push(...batch);
+      
+      if (batch.length < batchSize) break; // Last batch
+      offset += batchSize;
+    }
+    
     // Get unique competitions (DISTINCT by eventraceid)
     const uniqueCompetitions = new Map();
     
     // Get event organiser data for all competitions
-    const eventRaceIds = [...new Set((resultsData as any[]).map(r => r.eventraceid))];
+    const eventRaceIds = [...new Set(allData.map(r => r.eventraceid))];
     const { data: eventsData, error: eventsError } = await supabase
       .from('events')
       .select('eventraceid, eventorganiser')
@@ -786,7 +772,7 @@ export default function Index461() {
       eventOrganiserMap.set(event.eventraceid, event.eventorganiser);
     });
 
-    (resultsData as any[]).forEach(result => {
+    allData.forEach(result => {
       const competitionKey = result.eventraceid;
       if (!uniqueCompetitions.has(competitionKey)) {
         uniqueCompetitions.set(competitionKey, {
@@ -808,24 +794,32 @@ export default function Index461() {
   };
 
   const fetchParticipantsData = async () => {
-    // Use identical filters as KPI stats
-    const { data: resultsData, error: resultsError } = await supabase.rpc('rpc_results_enriched', {
-      _club: CLUB_ID,
-      _year: selectedYear,
-      _gender: selectedGender === '__ALL__' ? null : (selectedGender === 'Damer' ? 'F' : selectedGender === 'Herrar' ? 'M' : selectedGender),
-      _age_min: null,
-      _age_max: null,
-      _only_championship: null,
-      _personid: null,
-      _limit: 50000, // No silent cap
-      _offset: 0
-    });
+    // Fetch all data without limits and with same filters as KPI stats
+    const allData = [];
+    let offset = 0;
+    const batchSize = 10000;
     
-    if (resultsError) throw resultsError;
+    while (true) {
+      const rpcParams = {
+        _club: CLUB_ID,
+        _limit: batchSize,
+        _offset: offset,
+        ...buildRpcParams()
+      };
+      
+      const { data: batch, error } = await supabase.rpc('rpc_results_enriched', rpcParams);
+      if (error) throw error;
+      
+      if (!batch || batch.length === 0) break;
+      allData.push(...batch);
+      
+      if (batch.length < batchSize) break; // Last batch
+      offset += batchSize;
+    }
 
     // Get unique person IDs with at least 1 start (status != 'DidNotStart')
     const uniquePersons = new Map();
-    (resultsData as any[]).forEach(result => {
+    allData.forEach(result => {
       const status = (result.resultcompetitorstatus || '').trim();
       if (status !== 'DidNotStart') {
         if (!uniquePersons.has(result.personid)) {
@@ -835,7 +829,7 @@ export default function Index461() {
             personnamefamily: result.personnamefamily,
             personsex: result.personsex,
             organisationid: CLUB_ID, // From club filter
-            födelsearår: null // Will be filled from persons table
+            birthYear: null // Will be filled from persons table
           });
         }
       }
@@ -854,7 +848,7 @@ export default function Index461() {
       personsData.forEach(person => {
         if (uniquePersons.has(person.personid)) {
           const existingPerson = uniquePersons.get(person.personid);
-          existingPerson.födelsearår = person.personbirthdate ? new Date(person.personbirthdate).getFullYear() : null;
+          existingPerson.birthYear = person.personbirthdate ? new Date(person.personbirthdate).getFullYear() : null;
         }
       });
     }
@@ -872,32 +866,40 @@ export default function Index461() {
   };
 
   const fetchRacesData = async (statusFilter: string[], isOtherStatus = false) => {
-    // Use identical filters as KPI stats
-    const { data, error } = await supabase.rpc('rpc_results_enriched', {
-      _club: CLUB_ID,
-      _year: selectedYear,
-      _gender: selectedGender === '__ALL__' ? null : (selectedGender === 'Damer' ? 'F' : selectedGender === 'Herrar' ? 'M' : selectedGender),
-      _age_min: null,
-      _age_max: null,
-      _only_championship: null,
-      _personid: null,
-      _limit: 50000, // No silent cap
-      _offset: 0
-    });
+    // Fetch all data without limits and with same filters as KPI stats
+    const allData = [];
+    let offset = 0;
+    const batchSize = 10000;
     
-    if (error) throw error;
+    while (true) {
+      const rpcParams = {
+        _club: CLUB_ID,
+        _limit: batchSize,
+        _offset: offset,
+        ...buildRpcParams()
+      };
+      
+      const { data: batch, error } = await supabase.rpc('rpc_results_enriched', rpcParams);
+      if (error) throw error;
+      
+      if (!batch || batch.length === 0) break;
+      allData.push(...batch);
+      
+      if (batch.length < batchSize) break; // Last batch
+      offset += batchSize;
+    }
 
     // Normalize and filter by status with exact matching
     let filtered;
     if (isOtherStatus) {
       // For "other" status, exclude OK, DidNotStart, and MisPunch (exact case)
-      filtered = (data as any[]).filter(result => {
+      filtered = allData.filter(result => {
         const status = (result.resultcompetitorstatus || '').trim();
         return !['OK', 'DidNotStart', 'MisPunch'].includes(status);
       });
     } else {
       // For specific statuses, ensure exact match (case sensitive, trimmed)
-      filtered = (data as any[]).filter(result => {
+      filtered = allData.filter(result => {
         const status = (result.resultcompetitorstatus || '').trim();
         return statusFilter.includes(status);
       });
@@ -1132,7 +1134,7 @@ export default function Index461() {
           <CardContent className="pt-6">
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               <div className="space-y-1">
-                <div className="text-sm text-muted-foreground">Antal tävlingar med deltagare</div>
+                <div className="text-sm text-foreground">Antal tävlingar med deltagare</div>
                 <button 
                   className="text-2xl font-bold underline text-primary hover:text-primary/80"
                   onClick={() => handleKpiClick('competitions', 'Tävlingar med deltagare')}
@@ -1141,7 +1143,7 @@ export default function Index461() {
                 </button>
               </div>
               <div className="space-y-1">
-                <div className="text-sm text-muted-foreground">Antal deltagare med minst 1 start</div>
+                <div className="text-sm text-foreground">Antal deltagare med minst 1 start</div>
                 <button 
                   className="text-2xl font-bold underline text-primary hover:text-primary/80"
                   onClick={() => handleKpiClick('participants', 'Deltagare med minst 1 start')}
@@ -1150,13 +1152,13 @@ export default function Index461() {
                 </button>
               </div>
               <div className="space-y-1">
-                <div className="text-sm text-muted-foreground">Antal godkända lopp</div>
-                <div className="text-2xl font-bold text-muted-foreground">
+                <div className="text-sm text-foreground">Antal godkända lopp</div>
+                <div className="text-2xl font-bold text-foreground">
                   {kpiStats.runs_ok}
                 </div>
               </div>
               <div className="space-y-1">
-                <div className="text-sm text-muted-foreground">Antal ej start</div>
+                <div className="text-sm text-foreground">Antal ej start</div>
                 <button 
                   className="text-2xl font-bold underline text-primary hover:text-primary/80"
                   onClick={() => handleKpiClick('didnotstart', 'Ej start')}
@@ -1165,7 +1167,7 @@ export default function Index461() {
                 </button>
               </div>
               <div className="space-y-1">
-                <div className="text-sm text-muted-foreground">Antal felstämplade</div>
+                <div className="text-sm text-foreground">Antal felstämplade</div>
                 <button 
                   className="text-2xl font-bold underline text-primary hover:text-primary/80"
                   onClick={() => handleKpiClick('mispunch', 'Felstämplade')}
@@ -1174,7 +1176,7 @@ export default function Index461() {
                 </button>
               </div>
               <div className="space-y-1">
-                <div className="text-sm text-muted-foreground">Antal övrig status</div>
+                <div className="text-sm text-foreground">Antal övrig status</div>
                 <button 
                   className="text-2xl font-bold underline text-primary hover:text-primary/80"
                   onClick={() => handleKpiClick('other', 'Övrig status')}
@@ -1420,7 +1422,7 @@ export default function Index461() {
                       <TableCell>{item.organisationid}</TableCell>
                       <TableCell>{item.personid}</TableCell>
                       <TableCell>{item.personsex || '-'}</TableCell>
-                      <TableCell>{item.födelsearår || '-'}</TableCell>
+                      <TableCell>{item.birthYear || '-'}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
