@@ -7,7 +7,7 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instanciate createClient with right options
+  // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "13.0.4"
@@ -119,6 +119,7 @@ export type Database = {
       events: {
         Row: {
           batchid: string | null
+          disciplineid: number | null
           eventclassificationid: number | null
           eventdate: string | null
           eventdistance: string | null
@@ -128,9 +129,12 @@ export type Database = {
           eventorganiser: string | null
           eventorganiser_ids: string | null
           eventraceid: number
+          eventyear: number | null
+          readonly: number | null
         }
         Insert: {
           batchid?: string | null
+          disciplineid?: number | null
           eventclassificationid?: number | null
           eventdate?: string | null
           eventdistance?: string | null
@@ -140,9 +144,12 @@ export type Database = {
           eventorganiser?: string | null
           eventorganiser_ids?: string | null
           eventraceid: number
+          eventyear?: number | null
+          readonly?: number | null
         }
         Update: {
           batchid?: string | null
+          disciplineid?: number | null
           eventclassificationid?: number | null
           eventdate?: string | null
           eventdistance?: string | null
@@ -152,6 +159,8 @@ export type Database = {
           eventorganiser?: string | null
           eventorganiser_ids?: string | null
           eventraceid?: number
+          eventyear?: number | null
+          readonly?: number | null
         }
         Relationships: []
       }
@@ -242,13 +251,16 @@ export type Database = {
           classresultnumberofstarts: number | null
           classtypeid: number | null
           clubparticipation: number | null
+          countnopoints: number | null
           eventclassname: string | null
           eventid: number | null
           eventraceid: number
+          id: number
           klassfaktor: number | null
           personage: number | null
           personid: number
           points: number | null
+          readonly: number | null
           relayleg: number | null
           relaylegoverallposition: number | null
           relayteamenddiff: number | null
@@ -259,19 +271,23 @@ export type Database = {
           resultposition: number | null
           resulttime: number | null
           resulttimediff: number | null
+          xmlpersonname: string | null
         }
         Insert: {
           batchid?: string | null
           classresultnumberofstarts?: number | null
           classtypeid?: number | null
           clubparticipation?: number | null
+          countnopoints?: number | null
           eventclassname?: string | null
           eventid?: number | null
           eventraceid: number
+          id?: number
           klassfaktor?: number | null
           personage?: number | null
           personid: number
           points?: number | null
+          readonly?: number | null
           relayleg?: number | null
           relaylegoverallposition?: number | null
           relayteamenddiff?: number | null
@@ -282,19 +298,23 @@ export type Database = {
           resultposition?: number | null
           resulttime?: number | null
           resulttimediff?: number | null
+          xmlpersonname?: string | null
         }
         Update: {
           batchid?: string | null
           classresultnumberofstarts?: number | null
           classtypeid?: number | null
           clubparticipation?: number | null
+          countnopoints?: number | null
           eventclassname?: string | null
           eventid?: number | null
           eventraceid?: number
+          id?: number
           klassfaktor?: number | null
           personage?: number | null
           personid?: number
           points?: number | null
+          readonly?: number | null
           relayleg?: number | null
           relaylegoverallposition?: number | null
           relayteamenddiff?: number | null
@@ -305,6 +325,7 @@ export type Database = {
           resultposition?: number | null
           resulttime?: number | null
           resulttimediff?: number | null
+          xmlpersonname?: string | null
         }
         Relationships: [
           {
@@ -351,6 +372,7 @@ export type Database = {
           created: string | null
           eventid: number | null
           eventraceid: number | null
+          hide: number | null
           id: string
           message: string | null
           organisationid: number | null
@@ -362,6 +384,7 @@ export type Database = {
           created?: string | null
           eventid?: number | null
           eventraceid?: number | null
+          hide?: number | null
           id?: string
           message?: string | null
           organisationid?: number | null
@@ -373,6 +396,7 @@ export type Database = {
           created?: string | null
           eventid?: number | null
           eventraceid?: number | null
+          hide?: number | null
           id?: string
           message?: string | null
           organisationid?: number | null
@@ -382,10 +406,311 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      results_index461: {
+        Row: {
+          batchid: string | null
+          classresultnumberofstarts: number | null
+          classtypeid: number | null
+          clubparticipation: number | null
+          competitionid: number | null
+          disciplineid: number | null
+          eventclassname: string | null
+          eventdate: string | null
+          eventdistance: string | null
+          eventdistance_label: string | null
+          eventform: string | null
+          eventform_group: string | null
+          eventform_label: string | null
+          eventid: number | null
+          eventname: string | null
+          eventraceid: number | null
+          eventsid: number | null
+          eventyear: number | null
+          id: number | null
+          klassfaktor: number | null
+          person_organisationid: number | null
+          personage: number | null
+          personid: number | null
+          personnamefamily: string | null
+          personnamegiven: string | null
+          personsex: string | null
+          points: number | null
+          readonly: number | null
+          relayleg: number | null
+          relaylegoverallposition: number | null
+          relayteamenddiff: number | null
+          relayteamendposition: number | null
+          relayteamendstatus: string | null
+          relayteamname: string | null
+          resultcompetitorstatus: string | null
+          resultposition: number | null
+          resulttime: number | null
+          resulttimediff: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_results_batchrun"
+            columns: ["batchid"]
+            isOneToOne: false
+            referencedRelation: "batchrun"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_results_event_race"
+            columns: ["eventraceid"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["eventraceid"]
+          },
+          {
+            foreignKeyName: "fk_results_eventrace"
+            columns: ["eventraceid"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["eventraceid"]
+          },
+          {
+            foreignKeyName: "fk_results_org"
+            columns: ["clubparticipation"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["organisationid"]
+          },
+          {
+            foreignKeyName: "fk_results_organisation"
+            columns: ["clubparticipation"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["organisationid"]
+          },
+        ]
+      }
     }
     Functions: {
-      [_ in never]: never
+      _normalize_gender: {
+        Args: { _g: string }
+        Returns: string
+      }
+      get_results_filtered_v2: {
+        Args: {
+          _age_max: number
+          _age_min: number
+          _club: number
+          _discipline_id: number
+          _gender: string
+          _limit?: number
+          _offset?: number
+          _only_championship: boolean
+          _year: number
+        }
+        Returns: {
+          classresultnumberofstarts: number
+          classtypeid: number
+          clubparticipation: number
+          eventclassificationid: number
+          eventclassname: string
+          eventdate: string
+          eventdistance: string
+          eventform: string
+          eventid: number
+          eventname: string
+          eventraceid: number
+          klassfaktor: number
+          personage: number
+          personid: number
+          personnamefamily: string
+          personnamegiven: string
+          personsex: string
+          points: number
+          relayleg: number
+          relaylegoverallposition: number
+          relayteamenddiff: number
+          relayteamendposition: number
+          relayteamname: string
+          resultcompetitorstatus: string
+          resultposition: number
+          resulttime: number
+          resulttimediff: number
+        }[]
+      }
+      rpc_apptexts_get_many: {
+        Args: { _keys: string[]; _page: string }
+        Returns: {
+          key: string
+          value: string
+        }[]
+      }
+      rpc_batchrun_recent: {
+        Args: { _limit?: number }
+        Returns: {
+          appversion: string
+          clubparticipation: number
+          comment: string
+          endtime: string
+          id: string
+          initiatedby: string
+          numberoferrors: number
+          numberofrequests: number
+          numberofrowsafter: number
+          numberofrowsbefore: number
+          renderjobid: string
+          starttime: string
+          status: string
+        }[]
+      }
+      rpc_club_name: {
+        Args: { _club: number }
+        Returns: {
+          clubname: string
+          organisationid: number
+        }[]
+      }
+      rpc_index461: {
+        Args: {
+          discipline_ids?: number[]
+          distances?: string[]
+          form_groups?: string[]
+          genders?: string[]
+          limit_rows?: number
+          offset_rows?: number
+          years?: number[]
+        }
+        Returns: {
+          batchid: string | null
+          classresultnumberofstarts: number | null
+          classtypeid: number | null
+          clubparticipation: number | null
+          competitionid: number | null
+          disciplineid: number | null
+          eventclassname: string | null
+          eventdate: string | null
+          eventdistance: string | null
+          eventdistance_label: string | null
+          eventform: string | null
+          eventform_group: string | null
+          eventform_label: string | null
+          eventid: number | null
+          eventname: string | null
+          eventraceid: number | null
+          eventsid: number | null
+          eventyear: number | null
+          id: number | null
+          klassfaktor: number | null
+          person_organisationid: number | null
+          personage: number | null
+          personid: number | null
+          personnamefamily: string | null
+          personnamegiven: string | null
+          personsex: string | null
+          points: number | null
+          readonly: number | null
+          relayleg: number | null
+          relaylegoverallposition: number | null
+          relayteamenddiff: number | null
+          relayteamendposition: number | null
+          relayteamendstatus: string | null
+          relayteamname: string | null
+          resultcompetitorstatus: string | null
+          resultposition: number | null
+          resulttime: number | null
+          resulttimediff: number | null
+        }[]
+      }
+      rpc_index461_stats: {
+        Args: {
+          discipline_ids?: number[]
+          distances?: string[]
+          form_groups?: string[]
+          genders?: string[]
+          year: number
+        }
+        Returns: {
+          competitions_with_participation: number
+          participants_with_start: number
+          runs_didnotstart: number
+          runs_mispunch: number
+          runs_ok: number
+          runs_other: number
+        }[]
+      }
+      rpc_index461_top_competitors: {
+        Args: {
+          discipline_ids?: number[]
+          distances?: string[]
+          form_groups?: string[]
+          genders?: string[]
+          limit_rows?: number
+          year: number
+        }
+        Returns: {
+          competitions_count: number
+          personid: number
+          personnamefamily: string
+          personnamegiven: string
+        }[]
+      }
+      rpc_logdata_recent: {
+        Args: { _limit?: number }
+        Returns: {
+          comment: string
+          completed: string
+          errormessage: string
+          eventid: number
+          level: string
+          organisationid: number
+          request: string
+          responsecode: string
+          started: string
+        }[]
+      }
+      rpc_results_enriched: {
+        Args: {
+          _age_max?: number
+          _age_min?: number
+          _club?: number
+          _gender?: string
+          _limit?: number
+          _offset?: number
+          _only_championship?: boolean
+          _personid?: number
+          _year?: number
+        }
+        Returns: {
+          classresultnumberofstarts: number
+          classtypeid: number
+          clubparticipation: number
+          eventclassificationid: number
+          eventclassname: string
+          eventdate: string
+          eventdistance: string
+          eventform: string
+          eventid: number
+          eventname: string
+          eventraceid: number
+          klassfaktor: number
+          personage: number
+          personid: number
+          personnamefamily: string
+          personnamegiven: string
+          personsex: string
+          points: number
+          relayleg: number
+          relaylegoverallposition: number
+          relayteamenddiff: number
+          relayteamendposition: number
+          relayteamname: string
+          resultcompetitorstatus: string
+          resultposition: number
+          resulttime: number
+          resulttimediff: number
+        }[]
+      }
+      rpc_years_for_club: {
+        Args: { _club: number }
+        Returns: {
+          year: number
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
