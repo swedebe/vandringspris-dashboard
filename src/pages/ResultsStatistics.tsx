@@ -173,22 +173,30 @@ export default function ResultsStatistics() {
 
       const uniqueClubIds = [...new Set(clubsData?.map(r => r.clubparticipation ? String(r.clubparticipation) : null).filter(Boolean) || [])] as string[];
       
-      // Try to get club names from eventorclubs table
-      const { data: clubNamesData, error: clubsNameErr } = await supabase
-        .from("eventorclubs")
-        .select("organisationid, name, clubname")
-        .in("organisationid", uniqueClubIds);
+      // Try to get club names from eventorclubs table (robust to RLS/missing columns)
+      let nameRows: Array<{ organisationid: string | number; name?: string; clubname?: string }> = [];
+      try {
+        const { data, error } = await supabase
+          .from("eventorclubs")
+          .select("organisationid, name, clubname")
+          .in("organisationid", uniqueClubIds);
+        if (!error && data) nameRows = data;
+      } catch (err) {
+        console.warn("[clubs] name lookup failed:", err);
+      }
 
-      if (clubsNameErr) console.warn("[clubs] name lookup err:", clubsNameErr?.message);
-      const clubNameMap = new Map((clubNamesData ?? []).map(c => [String(c.organisationid), c.name ?? c.clubname ?? String(c.organisationid)]));
+      const clubNameMap = new Map<string, string>(
+        nameRows.map(r => [String(r.organisationid), (r.name ?? r.clubname ?? String(r.organisationid)) as string])
+      );
+      
       let clubs = uniqueClubIds.map((id: string) => ({
         id,
-        label: (clubNameMap.get(id) as string) || id
+        label: clubNameMap.get(id) ?? id
       })).sort((a, b) => a.label.localeCompare(b.label, "sv"));
 
       // Keep the selected club visible in options
       if (club && !clubs.some(c => c.id === club)) {
-        const fallbackLabel = (clubNameMap.get(club) as string) || club;
+        const fallbackLabel = clubNameMap.get(club) ?? club;
         clubs = [{ id: club, label: fallbackLabel }, ...clubs];
       }
 
@@ -197,63 +205,81 @@ export default function ResultsStatistics() {
         return { clubs, runners: [], forms: [], distances: [] };
       }
 
-      console.debug("[filters] year:", year, "club(raw):", club, "events:", eventIds.length);
+      // Normalize club ID for queries (always use number for clubparticipation comparisons)
+      const clubIdNum = Number(club);
+      if (!Number.isFinite(clubIdNum)) {
+        console.warn("[filters] invalid club id:", club);
+        return { clubs, runners: [], forms: [], distances: [] };
+      }
 
-      // Get runners using a single joined query to avoid RLS issues
-      const { data: runnersData, error: runnersError } = await supabase
-        .from("results")
-        .select(`
-          personid,
-          xmlpersonname,
-          persons!inner(personid, namegiven, namefamily)
-        `)
-        .in("eventid", eventIds)
-        .eq("clubparticipation", club);
+      console.debug("[filters] year:", year, "club(UI):", club, "clubIdNum:", clubIdNum, "eventIds:", eventIds.length);
 
-      if (runnersError) throw runnersError;
+      // Get runners using a single joined query with correct column names
+      let runners: Array<{ id: number; label: string }> = [];
+      try {
+        const { data: runnersData, error: runnersError } = await supabase
+          .from("results")
+          .select(`
+            personid,
+            xmlpersonname,
+            persons!inner(personid, personnamegiven, personnamefamily)
+          `)
+          .in("eventid", eventIds)
+          .eq("clubparticipation", clubIdNum);
 
-      const runners: Array<{ id: number; label: string }> = [];
-      const seenRunners = new Map<string, boolean>();
+        if (runnersError) {
+          console.warn("[filters] runners join err:", runnersError.message);
+        } else {
+          const seenRunners = new Set<string>();
 
-      runnersData?.forEach(row => {
-        if (row.personid > 0 && row.persons) {
-          // Named person from persons table
-          const name = `${row.persons.namegiven || ""} ${row.persons.namefamily || ""}`.trim();
-          const label = name || String(row.personid);
-          const key = `${row.personid}-${label}`;
-          
-          if (!seenRunners.has(key)) {
-            runners.push({ id: row.personid, label });
-            seenRunners.set(key, true);
-          }
-        } else if (row.personid === 0) {
-          // XML-named or unknown runner
-          const label = row.xmlpersonname?.trim() || "Unknown";
-          const key = `0-${label}`;
-          
-          if (!seenRunners.has(key)) {
-            runners.push({ id: 0, label });
-            seenRunners.set(key, true);
-          }
+          (runnersData ?? []).forEach((row: any) => {
+            if (row.personid > 0 && row.persons) {
+              // Named person from persons table
+              const name = `${row.persons.personnamegiven ?? ""} ${row.persons.personnamefamily ?? ""}`.trim();
+              const label = name || String(row.personid);
+              const key = `p-${row.personid}`;
+              
+              if (!seenRunners.has(key)) {
+                runners.push({ id: row.personid, label });
+                seenRunners.add(key);
+              }
+            } else if (row.personid === 0) {
+              // XML-named or unknown runner
+              const label = (row.xmlpersonname ?? "").trim() || "Unknown";
+              const key = `x-${label}`;
+              
+              if (!seenRunners.has(key)) {
+                runners.push({ id: 0, label });
+                seenRunners.add(key);
+              }
+            }
+          });
+
+          runners.sort((a, b) => a.label.localeCompare(b.label, "sv"));
         }
-      });
-
-      runners.sort((a, b) => a.label.localeCompare(b.label, "sv"));
+      } catch (err) {
+        console.warn("[filters] runners query failed:", err);
+      }
 
       console.debug("[filters] clubs options:", clubs.length);
-      console.debug("[filters] runners rows (raw):", runnersData?.length ?? 0);
+      console.debug("[filters] runners opts:", runners.length);
 
-      // Get forms and distances (scope by club if provided)
+      // Get forms and distances (scope by club using same normalized ID)
       let scopedEventIds = eventIds;
       if (club != null) {
-        const { data: clubEventData, error: clubEventErr } = await supabase
-          .from("results")
-          .select("eventid")
-          .in("eventid", eventIds)
-          .eq("clubparticipation", club);
-        
-        if (clubEventErr) throw clubEventErr;
-        scopedEventIds = [...new Set(clubEventData?.map(r => r.eventid).filter(Boolean) || [])];
+        try {
+          const { data: clubEventData, error: clubEventErr } = await supabase
+            .from("results")
+            .select("eventid")
+            .in("eventid", eventIds)
+            .eq("clubparticipation", clubIdNum);
+          
+          if (!clubEventErr && clubEventData) {
+            scopedEventIds = [...new Set(clubEventData.map(r => r.eventid).filter(Boolean))];
+          }
+        } catch (err) {
+          console.warn("[filters] club event scoping failed:", err);
+        }
       }
 
       const scopedEvents = eventsData.filter(e => e.eventid && scopedEventIds.includes(e.eventid));
