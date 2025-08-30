@@ -144,10 +144,10 @@ export default function ResultsStatistics() {
     }
   }, [defaults, year]);
 
-  // Get filter options when year and club are both selected
+  // Get filter options when year is selected
   const { data: filterOptions, isLoading: isLoadingFilters } = useQuery<FilterOptions>({
     queryKey: ["resultsFilters", year, club],
-    enabled: !!year && !!club,
+    enabled: !!year,
     queryFn: async () => {
       // Get events for the selected year
       const { data: eventsData, error: eventsError } = await supabase
@@ -184,6 +184,11 @@ export default function ResultsStatistics() {
         id,
         label: (clubNameMap.get(id) as string) || String(id)
       })).sort((a, b) => a.label.localeCompare(b.label, "sv"));
+
+      // If no club is selected yet, return empty lists for the other filters
+      if (!club) {
+        return { clubs, runners: [], forms: [], distances: [] };
+      }
 
       // Get runners (scope by club if provided)
       let runnersQuery = supabase
