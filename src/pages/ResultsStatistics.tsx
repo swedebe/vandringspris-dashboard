@@ -144,12 +144,12 @@ export default function ResultsStatistics() {
     }
   }, [defaults, year]);
 
-  // Get filter options when year is selected
+  // Get clubs for the selected year using RPC pattern
   const { data: filterOptions, isLoading: isLoadingFilters } = useQuery<FilterOptions>({
     queryKey: ["resultsFilters", year, club],
     enabled: !!year,
     queryFn: async () => {
-      // Get events for the selected year
+      // Get clubs for the year from events
       const { data: eventsData, error: eventsError } = await supabase
         .from("events")
         .select("eventid, eventform, eventdistance")
@@ -162,7 +162,7 @@ export default function ResultsStatistics() {
 
       const eventIds = eventsData.map(e => e.eventid).filter(Boolean);
 
-      // Get clubs for the year
+      // Get unique clubs for the year
       const { data: clubsData, error: clubsError } = await supabase
         .from("results")
         .select("clubparticipation")
@@ -173,12 +173,12 @@ export default function ResultsStatistics() {
 
       const uniqueClubIds = [...new Set(clubsData?.map(r => r.clubparticipation ? String(r.clubparticipation) : null).filter(Boolean) || [])] as string[];
       
-      // Try to get club names from eventorclubs table (robust to RLS/missing columns)
-      let nameRows: Array<{ organisationid: string | number; name?: string; clubname?: string }> = [];
+      // Get club names from eventorclubs using 'name' column (like Index114)
+      let nameRows: Array<{ organisationid: string | number; name?: string }> = [];
       try {
         const { data, error } = await supabase
           .from("eventorclubs")
-          .select("organisationid, name, clubname")
+          .select("organisationid, name")
           .in("organisationid", uniqueClubIds);
         if (!error && data) nameRows = data;
       } catch (err) {
@@ -186,7 +186,7 @@ export default function ResultsStatistics() {
       }
 
       const clubNameMap = new Map<string, string>(
-        nameRows.map(r => [String(r.organisationid), (r.name ?? r.clubname ?? String(r.organisationid)) as string])
+        nameRows.map(r => [String(r.organisationid), r.name ?? String(r.organisationid)])
       );
       
       let clubs = uniqueClubIds.map((id: string) => ({
@@ -200,71 +200,69 @@ export default function ResultsStatistics() {
         clubs = [{ id: club, label: fallbackLabel }, ...clubs];
       }
 
-      // If no club is selected yet, return empty lists for the other filters
+      // If no club is selected, return empty lists for dependent filters
       if (!club) {
         return { clubs, runners: [], forms: [], distances: [] };
       }
 
-      // Normalize club ID for queries (always use number for clubparticipation comparisons)
       const clubIdNum = Number(club);
       if (!Number.isFinite(clubIdNum)) {
         console.warn("[filters] invalid club id:", club);
         return { clubs, runners: [], forms: [], distances: [] };
       }
 
-      console.debug("[filters] year:", year, "club(UI):", club, "clubIdNum:", clubIdNum, "eventIds:", eventIds.length);
+      console.debug("[results-stats] year:", year, "club(UI str):", club, "clubIdNum:", clubIdNum);
 
-      // Get runners using a single joined query with correct column names
+      // Use RPC to get runners (proven Index114 pattern)
       let runners: Array<{ id: number; label: string }> = [];
       try {
-        const { data: runnersData, error: runnersError } = await supabase
-          .from("results")
-          .select(`
-            personid,
-            xmlpersonname,
-            persons!inner(personid, personnamegiven, personnamefamily)
-          `)
-          .in("eventid", eventIds)
-          .eq("clubparticipation", clubIdNum);
+        const { data, error } = await supabase.rpc("rpc_results_enriched", {
+          _club: clubIdNum,
+          _year: year,
+          _gender: null,
+          _age_min: null,
+          _age_max: null,
+          _only_championship: null,
+          _personid: null,
+          _limit: 10000,
+          _offset: 0,
+        });
 
-        if (runnersError) {
-          console.warn("[filters] runners join err:", runnersError.message);
+        if (error) {
+          console.warn("[filters] RPC error:", error.message);
         } else {
-          const seenRunners = new Set<string>();
-
-          (runnersData ?? []).forEach((row: any) => {
-            if (row.personid > 0 && row.persons) {
-              // Named person from persons table
-              const name = `${row.persons.personnamegiven ?? ""} ${row.persons.personnamefamily ?? ""}`.trim();
-              const label = name || String(row.personid);
-              const key = `p-${row.personid}`;
-              
-              if (!seenRunners.has(key)) {
-                runners.push({ id: row.personid, label });
-                seenRunners.add(key);
+          // Build distinct runner options exactly like Index114 groupByPerson
+          const seen = new Set<string>();
+          for (const r of (data as any[])) {
+            if (r.personid > 0) {
+              // Names come directly from the RPC view (correct column names)
+              const given = (r.personnamegiven ?? "").trim();
+              const family = (r.personnamefamily ?? "").trim();
+              const label = (given || family) ? `${given} ${family}`.trim() : String(r.personid);
+              const key = `p-${r.personid}`;
+              if (!seen.has(key)) { 
+                seen.add(key); 
+                runners.push({ id: r.personid, label }); 
               }
-            } else if (row.personid === 0) {
-              // XML-named or unknown runner
-              const label = (row.xmlpersonname ?? "").trim() || "Unknown";
-              const key = `x-${label}`;
-              
-              if (!seenRunners.has(key)) {
-                runners.push({ id: 0, label });
-                seenRunners.add(key);
+            } else if (r.personid === 0) {
+              const name = (r.xmlpersonname ?? "").trim() || "Unknown";
+              const key = `x-${name}`;
+              if (!seen.has(key)) { 
+                seen.add(key); 
+                runners.push({ id: 0, label: name }); 
               }
             }
-          });
-
+          }
           runners.sort((a, b) => a.label.localeCompare(b.label, "sv"));
         }
       } catch (err) {
-        console.warn("[filters] runners query failed:", err);
+        console.warn("[filters] RPC failed:", err);
       }
 
-      console.debug("[filters] clubs options:", clubs.length);
-      console.debug("[filters] runners opts:", runners.length);
+      console.debug("[results-stats] runner-options count:", runners.length);
+      console.debug("[results-stats] club options:", clubs.length);
 
-      // Get forms and distances (scope by club using same normalized ID)
+      // Get forms and distances using same club scoping
       let scopedEventIds = eventIds;
       if (club != null) {
         try {
