@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Helmet } from "react-helmet-async";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -17,6 +17,8 @@ interface FilterOptions {
 }
 
 export default function ResultsStatistics() {
+  console.log('React object:', React);
+  console.log('useState function:', useState);
   const { data: texts } = useAppTexts("results-statistics", [
     "title",
     "description",
