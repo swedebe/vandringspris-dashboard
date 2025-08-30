@@ -190,62 +190,44 @@ export default function ResultsStatistics() {
         return { clubs, runners: [], forms: [], distances: [] };
       }
 
-      // Get runners (scope by club if provided)
-      let runnersQuery = supabase
+      // Get runners using a single joined query to avoid RLS issues
+      const { data: runnersData, error: runnersError } = await supabase
         .from("results")
-        .select("personid, xmlpersonname")
-        .in("eventid", eventIds);
+        .select(`
+          personid,
+          xmlpersonname,
+          persons!inner(personid, personnamegiven, personnamefamily)
+        `)
+        .in("eventid", eventIds)
+        .eq("clubparticipation", club);
 
-      if (club) {
-        runnersQuery = runnersQuery.eq("clubparticipation", club);
-      }
-
-      const { data: runnersData, error: runnersError } = await runnersQuery;
       if (runnersError) throw runnersError;
 
-      const uniquePersonIds = [...new Set(runnersData?.map(r => r.personid).filter(Boolean) || [])];
-      const positivePersonIds = uniquePersonIds.filter((id: number) => id > 0);
-      const xmlNamedRunners = runnersData?.filter(r => r.personid === 0 && r.xmlpersonname?.trim()) || [];
-
-      // Get person names for personid > 0
-      let personsData: any[] = [];
-      if (positivePersonIds.length > 0) {
-        const { data, error } = await supabase
-          .from("persons")
-          .select("personid, personnamegiven, personnamefamily")
-          .in("personid", positivePersonIds);
-        if (error) throw error;
-        personsData = data ?? [];
-      }
-
       const runners: Array<{ id: number; label: string }> = [];
+      const seenRunners = new Map<string, boolean>();
 
-      // Add named persons
-      personsData?.forEach(person => {
-        const name = `${person.personnamegiven || ""} ${person.personnamefamily || ""}`.trim();
-        runners.push({
-          id: person.personid,
-          label: name || String(person.personid)
-        });
+      runnersData?.forEach(row => {
+        if (row.personid > 0 && row.persons) {
+          // Named person from persons table
+          const name = `${row.persons.personnamegiven || ""} ${row.persons.personnamefamily || ""}`.trim();
+          const label = name || String(row.personid);
+          const key = `${row.personid}-${label}`;
+          
+          if (!seenRunners.has(key)) {
+            runners.push({ id: row.personid, label });
+            seenRunners.set(key, true);
+          }
+        } else if (row.personid === 0) {
+          // XML-named or unknown runner
+          const label = row.xmlpersonname?.trim() || "Unknown";
+          const key = `0-${label}`;
+          
+          if (!seenRunners.has(key)) {
+            runners.push({ id: 0, label });
+            seenRunners.set(key, true);
+          }
+        }
       });
-
-      // Add XML-named runners (personid = 0)
-      const uniqueXmlNames = [...new Set(xmlNamedRunners.map(r => r.xmlpersonname?.trim()).filter(Boolean))];
-      uniqueXmlNames.forEach((name: string) => {
-        runners.push({
-          id: 0,
-          label: name
-        });
-      });
-
-      // Add unknown runner if there are personid = 0 with no xmlpersonname
-      const hasUnknownRunners = runnersData?.some(r => r.personid === 0 && !r.xmlpersonname?.trim());
-      if (hasUnknownRunners) {
-        runners.push({
-          id: 0,
-          label: "Unknown"
-        });
-      }
 
       runners.sort((a, b) => a.label.localeCompare(b.label, "sv"));
 
