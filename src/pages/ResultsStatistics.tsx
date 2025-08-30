@@ -70,22 +70,75 @@ export default function ResultsStatistics() {
   const { data: defaults, isLoading: isLoadingDefaults } = useQuery({
     queryKey: ["resultsDefaults"],
     queryFn: async () => {
-      const response = await fetch("/api/results-stats/defaults", {
-        cache: 'no-store'
-      });
-      if (!response.ok) {
-        throw new Error("Failed to fetch defaults");
+      // Get latest year with results
+      const { data: eventsData, error: eventsError } = await supabase
+        .from("events")
+        .select("eventid, eventyear")
+        .not("eventyear", "is", null)
+        .order("eventyear", { ascending: false });
+
+      if (eventsError) throw eventsError;
+      if (!eventsData || eventsData.length === 0) {
+        return { latestYear: null, defaultClub: null };
       }
-      return response.json();
+
+      // Group events by year and find the latest year with results
+      const yearToEventIds = new Map<number, number[]>();
+      eventsData.forEach(event => {
+        if (event.eventyear && !yearToEventIds.has(event.eventyear)) {
+          yearToEventIds.set(event.eventyear, []);
+        }
+        if (event.eventyear && event.eventid) {
+          yearToEventIds.get(event.eventyear)!.push(event.eventid);
+        }
+      });
+
+      let latestYear = null;
+      const sortedYears = Array.from(yearToEventIds.keys()).sort((a, b) => b - a);
+      
+      for (const year of sortedYears) {
+        const eventIds = yearToEventIds.get(year)!;
+        const { count, error: resultsError } = await supabase
+          .from("results")
+          .select("eventid", { count: "exact", head: true })
+          .in("eventid", eventIds);
+
+        if (resultsError) throw resultsError;
+        if (count && count > 0) {
+          latestYear = year;
+          break;
+        }
+      }
+
+      if (!latestYear) {
+        return { latestYear: null, defaultClub: null };
+      }
+
+      // Get clubs for the latest year to determine default
+      const latestYearEventIds = yearToEventIds.get(latestYear)!;
+      const { data: clubsData, error: clubsError } = await supabase
+        .from("results")
+        .select("clubparticipation")
+        .in("eventid", latestYearEventIds)
+        .not("clubparticipation", "is", null);
+
+      if (clubsError) throw clubsError;
+
+      const uniqueClubs = [...new Set(clubsData?.map(r => r.clubparticipation).filter(Boolean) || [])];
+      const defaultClub = uniqueClubs.length === 1 ? uniqueClubs[0] : null;
+
+      return { latestYear, defaultClub };
     },
   });
 
   // Set initial values when defaults are loaded
   useEffect(() => {
     if (defaults && !year) {
-      setYear(defaults.latestYear);
+      if (defaults.latestYear) {
+        setYear(defaults.latestYear as number);
+      }
       if (defaults.defaultClub) {
-        setClub(defaults.defaultClub);
+        setClub(defaults.defaultClub as number);
       }
     }
   }, [defaults, year]);
@@ -95,18 +148,117 @@ export default function ResultsStatistics() {
     queryKey: ["resultsFilters", year, club],
     enabled: year != null,
     queryFn: async () => {
-      const response = await fetch("/api/results-stats/filters", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ year, club }),
-        cache: 'no-store'
-      });
-      if (!response.ok) {
-        throw new Error("Failed to fetch filters");
+      // Get events for the selected year
+      const { data: eventsData, error: eventsError } = await supabase
+        .from("events")
+        .select("eventid, eventform, eventdistance")
+        .eq("eventyear", year);
+
+      if (eventsError) throw eventsError;
+      if (!eventsData || eventsData.length === 0) {
+        return { clubs: [], runners: [], forms: [], distances: [] };
       }
-      return response.json();
+
+      const eventIds = eventsData.map(e => e.eventid).filter(Boolean);
+
+      // Get clubs for the year
+      const { data: clubsData, error: clubsError } = await supabase
+        .from("results")
+        .select("clubparticipation")
+        .in("eventid", eventIds)
+        .not("clubparticipation", "is", null);
+
+      if (clubsError) throw clubsError;
+
+      const uniqueClubIds = [...new Set(clubsData?.map(r => r.clubparticipation).filter(Boolean) || [])];
+      
+      // Try to get club names from eventorclubs table
+      const { data: clubNamesData } = await supabase
+        .from("eventorclubs")
+        .select("organisationid, clubname")
+        .in("organisationid", uniqueClubIds);
+
+      const clubNameMap = new Map(clubNamesData?.map(c => [c.organisationid, c.clubname]) || []);
+      const clubs = uniqueClubIds.map((id: number) => ({
+        id,
+        label: (clubNameMap.get(id) as string) || String(id)
+      })).sort((a, b) => a.label.localeCompare(b.label, "sv"));
+
+      // Get runners (scope by club if provided)
+      let runnersQuery = supabase
+        .from("results")
+        .select("personid, xmlpersonname")
+        .in("eventid", eventIds);
+
+      if (club) {
+        runnersQuery = runnersQuery.eq("clubparticipation", club);
+      }
+
+      const { data: runnersData, error: runnersError } = await runnersQuery;
+      if (runnersError) throw runnersError;
+
+      const uniquePersonIds = [...new Set(runnersData?.map(r => r.personid).filter(Boolean) || [])];
+      const positivePersonIds = uniquePersonIds.filter((id: number) => id > 0);
+      const xmlNamedRunners = runnersData?.filter(r => r.personid === 0 && r.xmlpersonname?.trim()) || [];
+
+      // Get person names for personid > 0
+      const { data: personsData } = await supabase
+        .from("persons")
+        .select("personid, personnamegiven, personnamefamily")
+        .in("personid", positivePersonIds);
+
+      const runners: Array<{ id: number; label: string }> = [];
+
+      // Add named persons
+      personsData?.forEach(person => {
+        const name = `${person.personnamegiven || ""} ${person.personnamefamily || ""}`.trim();
+        runners.push({
+          id: person.personid,
+          label: name || String(person.personid)
+        });
+      });
+
+      // Add XML-named runners (personid = 0)
+      const uniqueXmlNames = [...new Set(xmlNamedRunners.map(r => r.xmlpersonname?.trim()).filter(Boolean))];
+      uniqueXmlNames.forEach((name: string) => {
+        runners.push({
+          id: 0,
+          label: name
+        });
+      });
+
+      // Add unknown runner if there are personid = 0 with no xmlpersonname
+      const hasUnknownRunners = runnersData?.some(r => r.personid === 0 && !r.xmlpersonname?.trim());
+      if (hasUnknownRunners) {
+        runners.push({
+          id: 0,
+          label: "Unknown"
+        });
+      }
+
+      runners.sort((a, b) => a.label.localeCompare(b.label, "sv"));
+
+      // Get forms and distances (scope by club if provided)
+      let scopedEventIds = eventIds;
+      if (club) {
+        const { data: clubEventData } = await supabase
+          .from("results")
+          .select("eventid")
+          .in("eventid", eventIds)
+          .eq("clubparticipation", club);
+        
+        scopedEventIds = [...new Set(clubEventData?.map(r => r.eventid).filter(Boolean) || [])];
+      }
+
+      const scopedEvents = eventsData.filter(e => e.eventid && scopedEventIds.includes(e.eventid));
+      
+      const forms: string[] = [...new Set(scopedEvents.map(e => e.eventform).filter(f => f?.trim()))] as string[]
+      forms.sort((a: string, b: string) => a.localeCompare(b, "sv"));
+
+      const distances: string[] = [...new Set(scopedEvents.map(e => e.eventdistance).filter(d => d?.trim()))] as string[]
+      distances.sort((a: string, b: string) => a.localeCompare(b, "sv"));
+
+      return { clubs, runners, forms, distances } as FilterOptions;
     },
   });
 
