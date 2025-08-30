@@ -392,15 +392,15 @@ export default function ResultsStatistics() {
           <div>
             <label className="block text-sm mb-1">{t(texts, "filters.club", "Klubb")} <span className="text-red-500">*</span></label>
             <Select 
-              value={club || ""} 
-              onValueChange={(v) => setClub(v === "" ? null : v)}
+              value={club || "all"} 
+              onValueChange={(v) => setClub(v === "all" ? null : v)}
               disabled={isLoading}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Välj klubb" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Alla klubbar</SelectItem>
+                <SelectItem value="all">Alla klubbar</SelectItem>
                 {filterOptions?.clubs.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
                     {c.label}
@@ -413,15 +413,15 @@ export default function ResultsStatistics() {
           <div>
             <label className="block text-sm mb-1">{t(texts, "filters.runner", "Löpare")}</label>
             <Select
-              value={personId != null ? String(personId) : ""}
-              onValueChange={(v) => setPersonId(v === "" ? null : Number(v))}
+              value={personId != null ? String(personId) : "all"}
+              onValueChange={(v) => setPersonId(v === "all" ? null : Number(v))}
               disabled={!club || isLoadingFilters}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Alla löpare" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Alla löpare</SelectItem>
+                <SelectItem value="all">Alla löpare</SelectItem>
                 {filterOptions?.runners.map((r) => (
                   <SelectItem key={r.id} value={String(r.id)}>
                     {r.label}
