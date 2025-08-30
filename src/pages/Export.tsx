@@ -69,61 +69,108 @@ const Export = () => {
       const startDate = `${yearNum}-01-01`;
       const endDate = `${yearNum}-12-31`;
       
-      const { data: events, error: eventsError } = await supabase
-        .from("events")
-        .select("eventid, eventdate, eventname")
-        .gte("eventdate", startDate)
-        .lte("eventdate", endDate);
+      try {
+        const { data: events, error: eventsError } = await supabase
+          .from("events")
+          .select("eventid, eventdate, eventname")
+          .gte("eventdate", startDate)
+          .lte("eventdate", endDate);
 
-      if (eventsError) throw eventsError;
-      
-      eventsData = events || [];
-      eventIds = eventsData.map(e => e.eventid);
-      
-      // If no events found for the year, return empty results
-      if (eventIds.length === 0) {
-        return [];
+        if (eventsError) throw eventsError;
+        
+        eventsData = events || [];
+        eventIds = eventsData.map(e => e.eventid);
+        
+        // If no events found for the year, return empty results
+        if (eventIds.length === 0) {
+          return [];
+        }
+      } catch (error: any) {
+        console.error("Events fetch error:", error);
+        let errorMessage = "Export misslyckades (events)";
+        if (error?.message) errorMessage += `: ${error.message}`;
+        if (error?.code) errorMessage += ` (kod: ${error.code})`;
+        if (error?.hint) errorMessage += ` - ${error.hint}`;
+        throw new Error(errorMessage);
       }
     }
 
     // Step 2: Query results with filters
-    let query = supabase
-      .from("results")
-      .select(`
-        id,
-        eventid,
-        eventraceid,
-        personid,
-        xmlpersonname,
-        resulttime,
-        resulttimediff,
-        resultposition,
-        resultcompetitorstatus,
-        points,
-        clubparticipation,
-        classtypeid,
-        klassfaktor,
-        relayleg,
-        relayteamname,
-        relayteamendposition,
-        relayteamenddiff
-      `)
-      .eq("clubparticipation", clubNum);
+    let resultsData: any[] = [];
+    try {
+      let query = supabase
+        .from("results")
+        .select(`
+          id,
+          eventid,
+          eventraceid,
+          personid,
+          resulttime,
+          resulttimediff,
+          resultposition,
+          resultcompetitorstatus,
+          points,
+          clubparticipation,
+          classtypeid,
+          klassfaktor,
+          relayleg,
+          relayteamname,
+          relayteamendposition,
+          relayteamenddiff
+        `)
+        .eq("clubparticipation", clubNum);
 
-    if (personNum) {
-      query = query.eq("personid", personNum);
+      if (personNum) {
+        query = query.eq("personid", personNum);
+      }
+
+      if (yearNum && eventIds.length > 0) {
+        query = query.in("eventid", eventIds);
+      }
+
+      const { data: results, error: resultsError } = await query;
+      if (resultsError) throw resultsError;
+
+      resultsData = results || [];
+    } catch (error: any) {
+      console.error("Results fetch error:", error);
+      let errorMessage = "Export misslyckades (results)";
+      if (error?.message) errorMessage += `: ${error.message}`;
+      if (error?.code) errorMessage += ` (kod: ${error.code})`;
+      if (error?.hint) errorMessage += ` - ${error.hint}`;
+      throw new Error(errorMessage);
     }
 
-    if (yearNum && eventIds.length > 0) {
-      query = query.in("eventid", eventIds);
+    // Step 3: Fetch person names
+    let personNameMap: Record<number, string> = {};
+    if (resultsData.length > 0) {
+      const uniquePersonIds = [...new Set(resultsData.map(r => r.personid).filter(Boolean))];
+      
+      if (uniquePersonIds.length > 0) {
+        try {
+          const { data: persons, error: personsError } = await supabase
+            .from("persons")
+            .select("personid, personnamegiven, personnamefamily")
+            .in("personid", uniquePersonIds);
+
+          if (personsError) throw personsError;
+
+          if (persons) {
+            personNameMap = persons.reduce((acc, person) => {
+              const fullName = `${person.personnamegiven || ""} ${person.personnamefamily || ""}`.trim();
+              acc[person.personid] = fullName;
+              return acc;
+            }, {} as Record<number, string>);
+          }
+        } catch (error: any) {
+          console.error("Persons fetch error:", error);
+          // Non-blocking error - continue with empty names
+          setErrors({ general: "Obs: Kunde inte hämta löparnamn från persons – namnfält lämnas tomt." });
+        }
+      }
     }
 
-    const { data: results, error: resultsError } = await query;
-    if (resultsError) throw resultsError;
-
-    const resultsData = results || [];
-
-    // Step 3: Enrich with event data if we have it
+    // Step 4: Enrich with event data
     if (eventsData.length > 0) {
       const eventsById = eventsData.reduce((acc, event) => {
         acc[event.eventid] = event;
@@ -132,6 +179,7 @@ const Export = () => {
 
       return resultsData.map(result => ({
         ...result,
+        name: personNameMap[result.personid] || "",
         events: eventsById[result.eventid] || { eventdate: null, eventname: null }
       }));
     }
@@ -152,6 +200,7 @@ const Export = () => {
 
         return resultsData.map(result => ({
           ...result,
+          name: personNameMap[result.personid] || "",
           events: eventsById[result.eventid] || { eventdate: null, eventname: null }
         }));
       }
@@ -159,6 +208,7 @@ const Export = () => {
 
     return resultsData.map(result => ({
       ...result,
+      name: personNameMap[result.personid] || "",
       events: { eventdate: null, eventname: null }
     }));
   };
@@ -169,7 +219,7 @@ const Export = () => {
       "eventid",
       "eventraceid",
       "personid",
-      "xmlpersonname",
+      "name",
       "resulttime",
       "resulttimediff",
       "resultposition",
