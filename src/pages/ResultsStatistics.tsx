@@ -374,15 +374,15 @@ export default function ResultsStatistics() {
           <div>
             <label className="block text-sm mb-1">{t(texts, "filters.club", "Klubb")}</label>
             <Select 
-              value={String(club ?? "")} 
-              onValueChange={(v) => setClub(v ? Number(v) : null)}
+              value={club ? String(club) : "all"} 
+              onValueChange={(v) => setClub(v === "all" ? null : Number(v))}
               disabled={isLoading}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Alla klubbar" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Alla klubbar</SelectItem>
+                <SelectItem value="all">Alla klubbar</SelectItem>
                 {filterOptions?.clubs.map((c) => (
                   <SelectItem key={c.id} value={String(c.id)}>
                     {c.label}
@@ -431,15 +431,15 @@ export default function ResultsStatistics() {
           <div>
             <label className="block text-sm mb-1">{t(texts, "filters.eventform", "Tävlingsform")}</label>
             <Select 
-              value={eventForm} 
-              onValueChange={(v) => setEventForm(v)}
+              value={eventForm || "all"} 
+              onValueChange={(v) => setEventForm(v === "all" ? "" : v)}
               disabled={isLoading}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Alla former" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Alla former</SelectItem>
+                <SelectItem value="all">Alla former</SelectItem>
                 {filterOptions?.forms.map((form) => (
                   <SelectItem key={form} value={form}>
                     {form}
@@ -452,15 +452,15 @@ export default function ResultsStatistics() {
           <div>
             <label className="block text-sm mb-1">{t(texts, "filters.distance", "Distans")}</label>
             <Select 
-              value={distance} 
-              onValueChange={(v) => setDistance(v)}
+              value={distance || "all"} 
+              onValueChange={(v) => setDistance(v === "all" ? "" : v)}
               disabled={isLoading}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Alla distanser" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Alla distanser</SelectItem>
+                <SelectItem value="all">Alla distanser</SelectItem>
                 {filterOptions?.distances.map((dist) => (
                   <SelectItem key={dist} value={dist}>
                     {dist}
