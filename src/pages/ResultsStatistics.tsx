@@ -176,11 +176,11 @@ export default function ResultsStatistics() {
       // Try to get club names from eventorclubs table
       const { data: clubNamesData, error: clubsNameErr } = await supabase
         .from("eventorclubs")
-        .select("organisationid, name")
+        .select("organisationid, name, clubname")
         .in("organisationid", uniqueClubIds);
 
       if (clubsNameErr) console.warn("[clubs] name lookup err:", clubsNameErr?.message);
-      const clubNameMap = new Map((clubNamesData ?? []).map(c => [String(c.organisationid), c.name]));
+      const clubNameMap = new Map((clubNamesData ?? []).map(c => [String(c.organisationid), c.name ?? c.clubname ?? String(c.organisationid)]));
       let clubs = uniqueClubIds.map((id: string) => ({
         id,
         label: (clubNameMap.get(id) as string) || id
@@ -197,14 +197,7 @@ export default function ResultsStatistics() {
         return { clubs, runners: [], forms: [], distances: [] };
       }
 
-      // Normalize club id to number for queries
-      const clubIdNum = club == null ? null : Number(club);
-      if (club != null && !Number.isFinite(clubIdNum)) {
-        // Guard against invalid values; don't query until we have a numeric id
-        return { clubs, runners: [], forms: [], distances: [] };
-      }
-
-      console.debug("[filters] year:", year, "club(raw):", club, "clubIdNum:", clubIdNum, "events:", eventIds.length);
+      console.debug("[filters] year:", year, "club(raw):", club, "events:", eventIds.length);
 
       // Get runners using a single joined query to avoid RLS issues
       const { data: runnersData, error: runnersError } = await supabase
@@ -212,10 +205,10 @@ export default function ResultsStatistics() {
         .select(`
           personid,
           xmlpersonname,
-          persons!inner(personid, personnamegiven, personnamefamily)
+          persons!inner(personid, namegiven, namefamily)
         `)
         .in("eventid", eventIds)
-        .eq("clubparticipation", clubIdNum);
+        .eq("clubparticipation", club);
 
       if (runnersError) throw runnersError;
 
@@ -225,7 +218,7 @@ export default function ResultsStatistics() {
       runnersData?.forEach(row => {
         if (row.personid > 0 && row.persons) {
           // Named person from persons table
-          const name = `${row.persons.personnamegiven || ""} ${row.persons.personnamefamily || ""}`.trim();
+          const name = `${row.persons.namegiven || ""} ${row.persons.namefamily || ""}`.trim();
           const label = name || String(row.personid);
           const key = `${row.personid}-${label}`;
           
@@ -252,12 +245,12 @@ export default function ResultsStatistics() {
 
       // Get forms and distances (scope by club if provided)
       let scopedEventIds = eventIds;
-      if (clubIdNum != null) {
+      if (club != null) {
         const { data: clubEventData, error: clubEventErr } = await supabase
           .from("results")
           .select("eventid")
           .in("eventid", eventIds)
-          .eq("clubparticipation", clubIdNum);
+          .eq("clubparticipation", club);
         
         if (clubEventErr) throw clubEventErr;
         scopedEventIds = [...new Set(clubEventData?.map(r => r.eventid).filter(Boolean) || [])];
@@ -399,15 +392,15 @@ export default function ResultsStatistics() {
           <div>
             <label className="block text-sm mb-1">{t(texts, "filters.club", "Klubb")} <span className="text-red-500">*</span></label>
             <Select 
-              value={club || "all"} 
-              onValueChange={(v) => setClub(v === "all" ? null : v)}
+              value={club || ""} 
+              onValueChange={(v) => setClub(v === "" ? null : v)}
               disabled={isLoading}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Välj klubb" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Alla klubbar</SelectItem>
+                <SelectItem value="">Alla klubbar</SelectItem>
                 {filterOptions?.clubs.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
                     {c.label}
@@ -420,15 +413,15 @@ export default function ResultsStatistics() {
           <div>
             <label className="block text-sm mb-1">{t(texts, "filters.runner", "Löpare")}</label>
             <Select
-              value={personId ? String(personId) : "all"}
-              onValueChange={(v) => setPersonId(v === "all" ? null : Number(v))}
+              value={personId != null ? String(personId) : ""}
+              onValueChange={(v) => setPersonId(v === "" ? null : Number(v))}
               disabled={!club || isLoadingFilters}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Alla löpare" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Alla löpare</SelectItem>
+                <SelectItem value="">Alla löpare</SelectItem>
                 {filterOptions?.runners.map((r) => (
                   <SelectItem key={r.id} value={String(r.id)}>
                     {r.label}
