@@ -174,12 +174,13 @@ export default function ResultsStatistics() {
       const uniqueClubIds = [...new Set(clubsData?.map(r => r.clubparticipation ? String(r.clubparticipation) : null).filter(Boolean) || [])] as string[];
       
       // Try to get club names from eventorclubs table
-      const { data: clubNamesData } = await supabase
+      const { data: clubNamesData, error: clubsNameErr } = await supabase
         .from("eventorclubs")
-        .select("organisationid, clubname")
+        .select("organisationid, name")
         .in("organisationid", uniqueClubIds);
 
-      const clubNameMap = new Map(clubNamesData?.map(c => [String(c.organisationid), c.clubname]) || []);
+      if (clubsNameErr) console.warn("[clubs] name lookup err:", clubsNameErr?.message);
+      const clubNameMap = new Map((clubNamesData ?? []).map(c => [String(c.organisationid), c.name]));
       let clubs = uniqueClubIds.map((id: string) => ({
         id,
         label: (clubNameMap.get(id) as string) || id
@@ -196,6 +197,15 @@ export default function ResultsStatistics() {
         return { clubs, runners: [], forms: [], distances: [] };
       }
 
+      // Normalize club id to number for queries
+      const clubIdNum = club == null ? null : Number(club);
+      if (club != null && !Number.isFinite(clubIdNum)) {
+        // Guard against invalid values; don't query until we have a numeric id
+        return { clubs, runners: [], forms: [], distances: [] };
+      }
+
+      console.debug("[filters] year:", year, "club(raw):", club, "clubIdNum:", clubIdNum, "events:", eventIds.length);
+
       // Get runners using a single joined query to avoid RLS issues
       const { data: runnersData, error: runnersError } = await supabase
         .from("results")
@@ -205,7 +215,7 @@ export default function ResultsStatistics() {
           persons!inner(personid, personnamegiven, personnamefamily)
         `)
         .in("eventid", eventIds)
-        .eq("clubparticipation", club);
+        .eq("clubparticipation", clubIdNum);
 
       if (runnersError) throw runnersError;
 
@@ -237,15 +247,19 @@ export default function ResultsStatistics() {
 
       runners.sort((a, b) => a.label.localeCompare(b.label, "sv"));
 
+      console.debug("[filters] clubs options:", clubs.length);
+      console.debug("[filters] runners rows (raw):", runnersData?.length ?? 0);
+
       // Get forms and distances (scope by club if provided)
       let scopedEventIds = eventIds;
-      if (club) {
-        const { data: clubEventData } = await supabase
+      if (clubIdNum != null) {
+        const { data: clubEventData, error: clubEventErr } = await supabase
           .from("results")
           .select("eventid")
           .in("eventid", eventIds)
-          .eq("clubparticipation", club);
+          .eq("clubparticipation", clubIdNum);
         
+        if (clubEventErr) throw clubEventErr;
         scopedEventIds = [...new Set(clubEventData?.map(r => r.eventid).filter(Boolean) || [])];
       }
 
