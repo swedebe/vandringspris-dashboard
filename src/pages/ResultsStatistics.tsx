@@ -252,7 +252,12 @@ export default function ResultsStatistics() {
 
       const scopedEvents = eventsData.filter(e => e.eventid && scopedEventIds.includes(e.eventid));
       
-      const forms: string[] = [...new Set(scopedEvents.map(e => e.eventform).filter(f => f?.trim()))] as string[]
+      // Normalize forms: null/empty becomes "Ind"
+      const normalizedForms = scopedEvents.map(e => {
+        const rawForm = e.eventform;
+        return (rawForm && rawForm.trim()) ? rawForm.trim() : "Ind";
+      });
+      const forms = [...new Set(normalizedForms)] as string[];
       forms.sort((a: string, b: string) => a.localeCompare(b, "sv"));
 
       const distances: string[] = [...new Set(scopedEvents.map(e => e.eventdistance).filter(d => d?.trim()))] as string[]
@@ -315,7 +320,12 @@ export default function ResultsStatistics() {
       if (error) throw error;
       let rows = (data ?? []).filter((r: any) => r.personsex != null);
       if (eventForm) {
-        rows = rows.filter((r: any) => r.eventform === eventForm);
+        if (eventForm === "Ind") {
+          // Filter for null/empty eventform
+          rows = rows.filter((r: any) => !r.eventform || !r.eventform.trim());
+        } else {
+          rows = rows.filter((r: any) => r.eventform === eventForm);
+        }
       }
       if (distance) {
         rows = rows.filter((r: any) => r.eventdistance === distance);
@@ -404,6 +414,41 @@ export default function ResultsStatistics() {
                     setPersonId(null);
                   }
                 }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    
+                    // Check if there are filtered suggestions visible
+                    if (runnerSearchTerm && !selectedRunner && filteredRunners.length > 0) {
+                      // Select first suggestion
+                      const firstRunner = filteredRunners[0];
+                      setPersonId(firstRunner.id);
+                      setRunnerSearchTerm("");
+                      setTrigger(x => x + 1);
+                    } else if (runnerSearchTerm && !selectedRunner) {
+                      // Try exact match (case-insensitive)
+                      const exactMatch = filterOptions?.runners.find(
+                        r => r.label.toLowerCase() === runnerSearchTerm.toLowerCase()
+                      );
+                      if (exactMatch) {
+                        setPersonId(exactMatch.id);
+                        setRunnerSearchTerm("");
+                        setTrigger(x => x + 1);
+                      } else {
+                        // Try numeric input
+                        const numericId = parseInt(runnerSearchTerm);
+                        if (!isNaN(numericId)) {
+                          setPersonId(numericId);
+                          setRunnerSearchTerm("");
+                          setTrigger(x => x + 1);
+                        }
+                      }
+                    } else if (selectedRunner) {
+                      // Already have a selection, just trigger search
+                      setTrigger(x => x + 1);
+                    }
+                  }
+                }}
                 disabled={isLoading}
               />
               {runnerSearchTerm && !selectedRunner && filteredRunners.length > 0 && (
@@ -485,6 +530,16 @@ export default function ResultsStatistics() {
 
       <Button onClick={() => setTrigger((x) => x + 1)}>{t(texts, "button.search", "Sök")}</Button>
 
+      {trigger > 0 && (
+        <div className="text-sm text-muted-foreground">
+          {isFetching ? (
+            <p>Loading...</p>
+          ) : (
+            <p>{results.length} row(s) found.</p>
+          )}
+        </div>
+      )}
+
       <section className="overflow-x-auto">
         <Table>
           <TableHeader>
@@ -525,7 +580,7 @@ export default function ResultsStatistics() {
                 <TableRow key={`${r.eventraceid}-${r.personid}`}>
                   <TableCell>{r.eventdate}</TableCell>
                   <TableCell>{r.eventname}</TableCell>
-                  <TableCell>{r.eventform}</TableCell>
+                  <TableCell>{r.eventform && r.eventform.trim() ? r.eventform : "Ind"}</TableCell>
                   <TableCell>{r.eventdistance}</TableCell>
                   <TableCell>{r.eventclassname}</TableCell>
                   <TableCell>{r.classtypeid}</TableCell>
