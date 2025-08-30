@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { Helmet } from "react-helmet-async";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -171,13 +171,18 @@ export default function ResultsStatistics() {
 
       if (clubsError) throw clubsError;
 
-      const uniqueClubIds = [...new Set(clubsData?.map(r => r.clubparticipation ? String(r.clubparticipation) : null).filter(Boolean) || [])] as string[];
+      // Distinct club ids as strings for UI
+      const uniqueClubIds = [...new Set((clubsData ?? [])
+        .map(r => r.clubparticipation == null ? null : String(r.clubparticipation))
+        .filter(Boolean))] as string[];
       
-      // Get club names from eventorclubs using 'name' column (like Index114)  
+      // Convert to numbers for eventorclubs query to match DB column type
       const idsForQuery = uniqueClubIds.map(id => Number(id)).filter(n => Number.isFinite(n));
       
       let clubNameRows: Array<{ organisationid: number; name?: string; clubname?: string }> = [];
-      {
+      
+      // Try eventorclubs first
+      if (idsForQuery.length > 0) {
         const { data, error } = await supabase
           .from("eventorclubs")
           .select("organisationid, name")
@@ -185,8 +190,8 @@ export default function ResultsStatistics() {
         if (!error && data) clubNameRows = data;
       }
 
-      // Optional fallback if RLS blocks eventorclubs or returns 0 rows
-      if (!clubNameRows.length) {
+      // Fallback to clubs table if eventorclubs returns zero rows
+      if (!clubNameRows.length && idsForQuery.length > 0) {
         const { data } = await supabase
           .from("clubs")
           .select("organisationid, clubname")
@@ -194,11 +199,12 @@ export default function ResultsStatistics() {
         if (data) clubNameRows = data.map(r => ({ organisationid: r.organisationid, name: r.clubname }));
       }
 
-      // Build label map (keys as strings)
+      // Build label map with string keys for consistent lookup
       const clubLabelMap = new Map<string, string>(
         clubNameRows.map(r => [String(r.organisationid), (r.name ?? r.clubname ?? String(r.organisationid)) as string])
       );
       
+      // Build options with resolved labels
       let clubs = uniqueClubIds.map(id => ({
         id,
         label: clubLabelMap.get(id) ?? id
@@ -394,6 +400,12 @@ export default function ResultsStatistics() {
   });
 
   const selectedRunner = filterOptions?.runners.find(r => r.id === personId);
+
+  // Build club label map for table rendering (consistent with selector)
+  const clubLabelMap = useMemo(
+    () => new Map(filterOptions?.clubs?.map(c => [c.id, c.label]) ?? []),
+    [filterOptions]
+  );
 
   const isLoading = isLoadingDefaults || isLoadingFilters;
 
@@ -603,7 +615,7 @@ export default function ResultsStatistics() {
                   <TableCell>{r.relayteamenddiff}</TableCell>
                   <TableCell>{r.relayteamendstatus}</TableCell>
                   <TableCell>{`${r.personnamegiven ?? ""} ${r.personnamefamily ?? ""}`.trim()}</TableCell>
-                  <TableCell>{filterOptions?.clubs.find(c => c.id === String(r.clubparticipation))?.label ?? String(r.clubparticipation)}</TableCell>
+                  <TableCell>{clubLabelMap.get(String(r.clubparticipation)) ?? String(r.clubparticipation)}</TableCell>
                   <TableCell>{r.personage}</TableCell>
                 </TableRow>
               ))
