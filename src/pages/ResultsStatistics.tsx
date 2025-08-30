@@ -350,7 +350,7 @@ export default function ResultsStatistics() {
       placement,
       trigger,
     ],
-    enabled: trigger > 0 && year != null,
+    enabled: trigger > 0 && year != null && club != null && personId != null,
     queryFn: async () => {
       const { data, error } = await supabase.rpc("rpc_results_enriched", {
         _club: club ? Number(club) : null,
@@ -454,17 +454,16 @@ export default function ResultsStatistics() {
           </div>
 
           <div>
-            <label className="block text-sm mb-1">{t(texts, "filters.runner", "Löpare")}</label>
+            <label className="block text-sm mb-1">{t(texts, "filters.runner", "Löpare")} <span className="text-red-500">*</span></label>
             <Select
-              value={personId != null ? String(personId) : "all"}
-              onValueChange={(v) => setPersonId(v === "all" ? null : Number(v))}
+              value={personId != null ? String(personId) : ""}
+              onValueChange={(v) => setPersonId(Number(v))}
               disabled={!club || isLoadingFilters}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Alla löpare" />
+                <SelectValue placeholder="Välj löpare (obligatoriskt)" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Alla löpare</SelectItem>
                 {filterOptions?.runners.map((r) => (
                   <SelectItem key={r.id} value={String(r.id)}>
                     {r.label}
@@ -531,7 +530,7 @@ export default function ResultsStatistics() {
 
       <Button 
         onClick={() => setTrigger((x) => x + 1)}
-        disabled={!club || isLoading}
+        disabled={!club || !year || !personId || isLoading}
       >
         {t(texts, "button.search", "Sök")}
       </Button>
