@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { Helmet } from "react-helmet-async";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -66,6 +66,18 @@ export default function ResultsStatistics() {
   const [placement, setPlacement] = useState<number | null>(null);
 
   const [trigger, setTrigger] = useState(0);
+
+  // Sorting state
+  type SortDir = "asc" | "desc";
+  type SortKey =
+    | "eventdate" | "eventname" | "eventform" | "eventdistance" | "eventclassname"
+    | "classtypeid" | "klassfaktor" | "points" | "resulttime" | "resulttimediff"
+    | "resultposition" | "classresultnumberofstarts" | "resultcompetitorstatus"
+    | "relayteamname" | "relayleg" | "relaylegoverallposition" | "relayteamendposition"
+    | "relayteamenddiff" | "relayteamendstatus" | "person" | "club";
+
+  const [sortBy, setSortBy] = useState<SortKey>("eventdate");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   // Get defaults on initial load
   const { data: defaults, isLoading: isLoadingDefaults } = useQuery({
@@ -374,6 +386,85 @@ export default function ResultsStatistics() {
     },
   });
 
+  // Create club label map for consistent name display
+  const clubLabelMap = useMemo(
+    () => new Map(filterOptions?.clubs?.map(c => [c.id, c.label]) ?? []),
+    [filterOptions]
+  );
+
+  // Sorting functions
+  function getCellValue(row: any, key: SortKey) {
+    switch (key) {
+      case "eventdate": return row.eventdate; // ISO string from RPC
+      case "eventname": return row.eventname ?? "";
+      case "eventform": return (row.eventform && row.eventform.trim()) ? row.eventform.trim() : "Ind";
+      case "eventdistance": return row.eventdistance ?? "";
+      case "eventclassname": return row.eventclassname ?? "";
+      case "classtypeid": return Number(row.classtypeid) || 0;
+      case "klassfaktor": return Number(row.klassfaktor) || 0;
+      case "points": return Number(row.points) || 0;
+      case "resulttime": return Number(row.resulttime) || 0;
+      case "resulttimediff": return Number(row.resulttimediff) || 0;
+      case "resultposition": return Number(row.resultposition) || 0;
+      case "classresultnumberofstarts": return Number(row.classresultnumberofstarts) || 0;
+      case "resultcompetitorstatus": return row.resultcompetitorstatus ?? "";
+      case "relayteamname": return row.relayteamname ?? "";
+      case "relayleg": return Number(row.relayleg) || 0;
+      case "relaylegoverallposition": return Number(row.relaylegoverallposition) || 0;
+      case "relayteamendposition": return Number(row.relayteamendposition) || 0;
+      case "relayteamenddiff": return Number(row.relayteamenddiff) || 0;
+      case "relayteamendstatus": return row.relayteamendstatus ?? "";
+      case "person": {
+        const given = (row.personnamegiven ?? "").trim();
+        const family = (row.personnamefamily ?? "").trim();
+        return (given || family) ? `${given} ${family}`.trim() : String(row.personid);
+      }
+      case "club": return clubLabelMap.get(String(row.clubparticipation)) ?? String(row.clubparticipation);
+      default: return "";
+    }
+  }
+
+  function compare(a: any, b: any, key: SortKey, dir: SortDir) {
+    const va = getCellValue(a, key);
+    const vb = getCellValue(b, key);
+    if (key === "eventdate") {
+      const da = new Date(va as string).getTime() || 0;
+      const db = new Date(vb as string).getTime() || 0;
+      return dir === "asc" ? da - db : db - da;
+    }
+    if (typeof va === "number" && typeof vb === "number") {
+      return dir === "asc" ? va - vb : vb - va;
+    }
+    return dir === "asc"
+      ? String(va).localeCompare(String(vb), "sv")
+      : String(vb).localeCompare(String(va), "sv");
+  }
+
+  // Apply sorting to results
+  const sortedResults = useMemo(() => {
+    if (!results.length) return results;
+    const sorted = [...results];
+    sorted.sort((a, b) => compare(a, b, sortBy, sortDir));
+    return sorted;
+  }, [results, sortBy, sortDir, clubLabelMap]);
+
+  // Sortable header component
+  function SortableHead({ col, children }: { col: SortKey; children: React.ReactNode }) {
+    const active = sortBy === col;
+    const nextDir = active && sortDir === "asc" ? "desc" : "asc";
+    return (
+      <button
+        className="flex items-center gap-1 select-none hover:text-foreground/80 transition-colors"
+        onClick={() => { setSortBy(col); setSortDir(nextDir); }}
+        title={active ? `Sort ${nextDir}` : "Sort asc"}
+        type="button"
+      >
+        <span>{children}</span>
+        {active ? <span className="text-xs">{sortDir === "asc" ? "▲" : "▼"}</span> : null}
+      </button>
+    );
+  }
+
   const selectedRunner = filterOptions?.runners.find(r => r.id === personId);
 
   const isLoading = isLoadingDefaults || isLoadingFilters;
@@ -531,39 +622,39 @@ export default function ResultsStatistics() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>{t(texts, "th.date", "Datum")}</TableHead>
-              <TableHead>{t(texts, "th.event", "Tävling")}</TableHead>
-              <TableHead>{t(texts, "th.form", "Tävlingsform")}</TableHead>
-              <TableHead>{t(texts, "th.distance", "Distans")}</TableHead>
-              <TableHead>{t(texts, "th.class", "Klass")}</TableHead>
-              <TableHead>{t(texts, "th.classtype", "Klasstyp")}</TableHead>
-              <TableHead>{t(texts, "th.classfactor", "Klassfaktor")}</TableHead>
-              <TableHead>{t(texts, "th.points", "Poäng")}</TableHead>
-              <TableHead>{t(texts, "th.time", "Tid")}</TableHead>
-              <TableHead>{t(texts, "th.diff", "Tid efter")}</TableHead>
-              <TableHead>{t(texts, "th.position", "Placering")}</TableHead>
-              <TableHead>{t(texts, "th.starts", "Antal startande")}</TableHead>
-              <TableHead>{t(texts, "th.status", "Resultatstatus")}</TableHead>
-              <TableHead>{t(texts, "th.relay.team", "Stafettlag")}</TableHead>
-              <TableHead>{t(texts, "th.relay.leg", "Stafettsträcka")}</TableHead>
-              <TableHead>{t(texts, "th.relay.legpos", "Sträckplacering")}</TableHead>
-              <TableHead>{t(texts, "th.relay.endpos", "Stafett slutplacering")}</TableHead>
-              <TableHead>{t(texts, "th.relay.enddiff", "Stafett tid efter")}</TableHead>
-              <TableHead>{t(texts, "th.relay.endstatus", "Stafettstatus")}</TableHead>
-              <TableHead>{t(texts, "th.person", "Löparens namn")}</TableHead>
-              <TableHead>{t(texts, "th.club", "Löparens klubb")}</TableHead>
+              <TableHead><SortableHead col="eventdate">{t(texts, "th.date", "Datum")}</SortableHead></TableHead>
+              <TableHead><SortableHead col="eventname">{t(texts, "th.event", "Tävling")}</SortableHead></TableHead>
+              <TableHead><SortableHead col="eventform">{t(texts, "th.form", "Tävlingsform")}</SortableHead></TableHead>
+              <TableHead><SortableHead col="eventdistance">{t(texts, "th.distance", "Distans")}</SortableHead></TableHead>
+              <TableHead><SortableHead col="eventclassname">{t(texts, "th.class", "Klass")}</SortableHead></TableHead>
+              <TableHead><SortableHead col="classtypeid">{t(texts, "th.classtype", "Klasstyp")}</SortableHead></TableHead>
+              <TableHead><SortableHead col="klassfaktor">{t(texts, "th.classfactor", "Klassfaktor")}</SortableHead></TableHead>
+              <TableHead><SortableHead col="points">{t(texts, "th.points", "Poäng")}</SortableHead></TableHead>
+              <TableHead><SortableHead col="resulttime">{t(texts, "th.time", "Tid")}</SortableHead></TableHead>
+              <TableHead><SortableHead col="resulttimediff">{t(texts, "th.diff", "Tid efter")}</SortableHead></TableHead>
+              <TableHead><SortableHead col="resultposition">{t(texts, "th.position", "Placering")}</SortableHead></TableHead>
+              <TableHead><SortableHead col="classresultnumberofstarts">{t(texts, "th.starts", "Antal startande")}</SortableHead></TableHead>
+              <TableHead><SortableHead col="resultcompetitorstatus">{t(texts, "th.status", "Resultatstatus")}</SortableHead></TableHead>
+              <TableHead><SortableHead col="relayteamname">{t(texts, "th.relay.team", "Stafettlag")}</SortableHead></TableHead>
+              <TableHead><SortableHead col="relayleg">{t(texts, "th.relay.leg", "Stafettsträcka")}</SortableHead></TableHead>
+              <TableHead><SortableHead col="relaylegoverallposition">{t(texts, "th.relay.legpos", "Sträckplacering")}</SortableHead></TableHead>
+              <TableHead><SortableHead col="relayteamendposition">{t(texts, "th.relay.endpos", "Stafett slutplacering")}</SortableHead></TableHead>
+              <TableHead><SortableHead col="relayteamenddiff">{t(texts, "th.relay.enddiff", "Stafett tid efter")}</SortableHead></TableHead>
+              <TableHead><SortableHead col="relayteamendstatus">{t(texts, "th.relay.endstatus", "Stafettstatus")}</SortableHead></TableHead>
+              <TableHead><SortableHead col="person">{t(texts, "th.person", "Löparens namn")}</SortableHead></TableHead>
+              <TableHead><SortableHead col="club">{t(texts, "th.club", "Löparens klubb")}</SortableHead></TableHead>
               <TableHead>{t(texts, "th.age", "Löparens ålder")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {results.length === 0 && trigger > 0 && !isFetching ? (
+            {sortedResults.length === 0 && trigger > 0 && !isFetching ? (
               <TableRow>
                 <TableCell colSpan={22} className="text-center text-muted-foreground">
                   {t(texts, "text.noData", "Ingen data finns")}
                 </TableCell>
               </TableRow>
             ) : (
-              results.map((r: any) => (
+              sortedResults.map((r: any) => (
                 <TableRow key={`${r.eventraceid}-${r.personid}`}>
                   <TableCell>{r.eventdate}</TableCell>
                   <TableCell>{r.eventname}</TableCell>
@@ -585,7 +676,7 @@ export default function ResultsStatistics() {
                   <TableCell>{r.relayteamenddiff}</TableCell>
                   <TableCell>{r.relayteamendstatus}</TableCell>
                   <TableCell>{`${r.personnamegiven ?? ""} ${r.personnamefamily ?? ""}`.trim()}</TableCell>
-                  <TableCell>{r.clubparticipation}</TableCell>
+                  <TableCell>{clubLabelMap.get(String(r.clubparticipation)) ?? String(r.clubparticipation)}</TableCell>
                   <TableCell>{r.personage}</TableCell>
                 </TableRow>
               ))
