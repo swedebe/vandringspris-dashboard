@@ -584,7 +584,7 @@ export default function ResultsStatistics() {
               <TableHead>{t(texts, "th.relay.endpos", "Stafett slutplacering")}</TableHead>
               <TableHead>{t(texts, "th.relay.enddiff", "Stafett tid efter")}</TableHead>
               <TableHead>{t(texts, "th.relay.endstatus", "Stafettstatus")}</TableHead>
-              <TableHead>{t(texts, "th.person", "Löparens namn")}</TableHead>
+              
               <TableHead>{t(texts, "th.club", "Löparens klubb")}</TableHead>
               <TableHead>{t(texts, "th.age", "Löparens ålder")}</TableHead>
             </TableRow>
@@ -592,7 +592,7 @@ export default function ResultsStatistics() {
           <TableBody>
             {results.length === 0 && trigger > 0 && !isFetching ? (
               <TableRow>
-                <TableCell colSpan={22} className="text-center text-muted-foreground">
+                <TableCell colSpan={21} className="text-center text-muted-foreground">
                   {t(texts, "text.noData", "Ingen data finns")}
                 </TableCell>
               </TableRow>
@@ -618,7 +618,7 @@ export default function ResultsStatistics() {
                   <TableCell>{r.relayteamendposition}</TableCell>
                   <TableCell>{r.relayteamenddiff}</TableCell>
                   <TableCell>{r.relayteamendstatus}</TableCell>
-                  <TableCell>{`${r.personnamegiven ?? ""} ${r.personnamefamily ?? ""}`.trim()}</TableCell>
+                  
                   <TableCell>{clubLabelMap.get(String(r.clubparticipation)) ?? String(r.clubparticipation)}</TableCell>
                   <TableCell>{r.personage}</TableCell>
                 </TableRow>
