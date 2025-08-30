@@ -61,6 +61,32 @@ const Export = () => {
     const personNum = personId.trim() ? parseInt(personId.trim()) : null;
     const yearNum = year.trim() ? parseInt(year.trim()) : null;
 
+    let eventsData: any[] = [];
+    let eventIds: number[] = [];
+
+    // Step 1: If year is provided, fetch matching events first
+    if (yearNum) {
+      const startDate = `${yearNum}-01-01`;
+      const endDate = `${yearNum}-12-31`;
+      
+      const { data: events, error: eventsError } = await supabase
+        .from("events")
+        .select("eventid, eventdate, eventname")
+        .gte("eventdate", startDate)
+        .lte("eventdate", endDate);
+
+      if (eventsError) throw eventsError;
+      
+      eventsData = events || [];
+      eventIds = eventsData.map(e => e.eventid);
+      
+      // If no events found for the year, return empty results
+      if (eventIds.length === 0) {
+        return [];
+      }
+    }
+
+    // Step 2: Query results with filters
     let query = supabase
       .from("results")
       .select(`
@@ -80,8 +106,7 @@ const Export = () => {
         relayleg,
         relayteamname,
         relayteamendposition,
-        relayteamenddiff,
-        events!inner(eventdate, eventname)
+        relayteamenddiff
       `)
       .eq("clubparticipation", clubNum);
 
@@ -89,17 +114,53 @@ const Export = () => {
       query = query.eq("personid", personNum);
     }
 
-    if (yearNum) {
-      const startDate = `${yearNum}-01-01`;
-      const endDate = `${yearNum}-12-31`;
-      query = query
-        .gte("events.eventdate", startDate)
-        .lte("events.eventdate", endDate);
+    if (yearNum && eventIds.length > 0) {
+      query = query.in("eventid", eventIds);
     }
 
-    const { data, error } = await query;
-    if (error) throw error;
-    return data || [];
+    const { data: results, error: resultsError } = await query;
+    if (resultsError) throw resultsError;
+
+    const resultsData = results || [];
+
+    // Step 3: Enrich with event data if we have it
+    if (eventsData.length > 0) {
+      const eventsById = eventsData.reduce((acc, event) => {
+        acc[event.eventid] = event;
+        return acc;
+      }, {} as Record<number, any>);
+
+      return resultsData.map(result => ({
+        ...result,
+        events: eventsById[result.eventid] || { eventdate: null, eventname: null }
+      }));
+    }
+
+    // If no year filter, optionally fetch event data for enrichment
+    if (!yearNum && resultsData.length > 0) {
+      const uniqueEventIds = [...new Set(resultsData.map(r => r.eventid))];
+      const { data: events } = await supabase
+        .from("events")
+        .select("eventid, eventdate, eventname")
+        .in("eventid", uniqueEventIds);
+
+      if (events) {
+        const eventsById = events.reduce((acc, event) => {
+          acc[event.eventid] = event;
+          return acc;
+        }, {} as Record<number, any>);
+
+        return resultsData.map(result => ({
+          ...result,
+          events: eventsById[result.eventid] || { eventdate: null, eventname: null }
+        }));
+      }
+    }
+
+    return resultsData.map(result => ({
+      ...result,
+      events: { eventdate: null, eventname: null }
+    }));
   };
 
   const generateCsv = (data: any[]) => {
@@ -181,9 +242,22 @@ const Export = () => {
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Export error:", error);
-      setErrors({ general: "Ett fel uppstod vid export av data" });
+      
+      // Build detailed error message
+      let errorMessage = "Export misslyckades";
+      if (error?.message) {
+        errorMessage += `: ${error.message}`;
+      }
+      if (error?.code) {
+        errorMessage += ` (kod: ${error.code})`;
+      }
+      if (error?.hint) {
+        errorMessage += ` - ${error.hint}`;
+      }
+      
+      setErrors({ general: errorMessage });
     } finally {
       setIsGenerating(false);
     }
