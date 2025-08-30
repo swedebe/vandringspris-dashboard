@@ -206,14 +206,14 @@ export default function ResultsStatistics() {
       // Get person names for personid > 0
       const { data: personsData } = await supabase
         .from("persons")
-        .select("personid, personnamegiven, personnamefamily")
+        .select("personid, namegiven, namefamily")
         .in("personid", positivePersonIds);
 
       const runners: Array<{ id: number; label: string }> = [];
 
       // Add named persons
       personsData?.forEach(person => {
-        const name = `${person.personnamegiven || ""} ${person.personnamefamily || ""}`.trim();
+        const name = `${person.namegiven || ""} ${person.namefamily || ""}`.trim();
         runners.push({
           id: person.personid,
           label: name || String(person.personid)
