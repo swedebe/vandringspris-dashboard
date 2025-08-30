@@ -62,9 +62,6 @@ export default function ResultsStatistics() {
   const [eventForm, setEventForm] = useState<string>("");
   const [distance, setDistance] = useState<string>("");
   const [placement, setPlacement] = useState<number | null>(null);
-  const [runnerSearchTerm, setRunnerSearchTerm] = useState<string>("");
-  const [runnerSearchResults, setRunnerSearchResults] = useState<Array<{ id: number; label: string }>>([]);
-  const [showRunnerResults, setShowRunnerResults] = useState<boolean>(false);
 
   const [trigger, setTrigger] = useState(0);
 
@@ -145,10 +142,10 @@ export default function ResultsStatistics() {
     }
   }, [defaults, year]);
 
-  // Get filter options when year or club changes
+  // Get filter options when year and club are both selected
   const { data: filterOptions, isLoading: isLoadingFilters } = useQuery<FilterOptions>({
     queryKey: ["resultsFilters", year, club],
-    enabled: year != null,
+    enabled: !!year && !!club,
     queryFn: async () => {
       // Get events for the selected year
       const { data: eventsData, error: eventsError } = await supabase
@@ -278,11 +275,10 @@ export default function ResultsStatistics() {
 
   // Clear invalid selections when filters change
   useEffect(() => {
-    if (filterOptions) {
+    if (club && filterOptions) {
       // Clear person if not in current list
       if (personId && !filterOptions.runners.some(r => r.id === personId)) {
         setPersonId(null);
-        setRunnerSearchTerm("");
       }
       // Clear form if not in current list
       if (eventForm && !filterOptions.forms.includes(eventForm)) {
@@ -292,31 +288,16 @@ export default function ResultsStatistics() {
       if (distance && !filterOptions.distances.includes(distance)) {
         setDistance("");
       }
-      // Clear runner search results when filters change
-      setRunnerSearchResults([]);
-      setShowRunnerResults(false);
     }
-  }, [filterOptions, personId, eventForm, distance]);
+  }, [filterOptions, personId, eventForm, distance, club]);
 
-  // Function to perform manual runner search
-  const performRunnerSearch = () => {
-    if (!runnerSearchTerm || !filterOptions?.runners) {
-      setRunnerSearchResults([]);
-      setShowRunnerResults(false);
-      return;
-    }
-
-    // Clear previous selection
+  // Clear dependent filters when club changes
+  useEffect(() => {
     setPersonId(null);
-
-    // Filter runners based on search term
-    const searchResults = filterOptions.runners.filter(runner =>
-      runner.label.toLowerCase().includes(runnerSearchTerm.toLowerCase())
-    ).slice(0, 50);
-
-    setRunnerSearchResults(searchResults);
-    setShowRunnerResults(true);
-  };
+    setEventForm("");
+    setDistance("");
+    setPlacement(null);
+  }, [club]);
 
   const { data: results = [], isFetching } = useQuery({
     queryKey: [
@@ -394,7 +375,7 @@ export default function ResultsStatistics() {
               type="number" 
               value={year ?? ""} 
               onChange={(e) => setYear(e.target.value ? Number(e.target.value) : null)}
-              disabled={isLoading}
+              disabled={!club || isLoading}
             />
             <p className="text-xs text-muted-foreground mt-1">
               {t(texts, "text.yearRequired", "Obligatoriskt - förifyllt till senaste tillgängliga år")}
@@ -402,14 +383,14 @@ export default function ResultsStatistics() {
           </div>
           
           <div>
-            <label className="block text-sm mb-1">{t(texts, "filters.club", "Klubb")}</label>
+            <label className="block text-sm mb-1">{t(texts, "filters.club", "Klubb")} <span className="text-red-500">*</span></label>
             <Select 
               value={club ? String(club) : "all"} 
               onValueChange={(v) => setClub(v === "all" ? null : Number(v))}
               disabled={isLoading}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Alla klubbar" />
+                <SelectValue placeholder="Välj klubb" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Alla klubbar</SelectItem>
@@ -424,58 +405,23 @@ export default function ResultsStatistics() {
 
           <div>
             <label className="block text-sm mb-1">{t(texts, "filters.runner", "Löpare")}</label>
-            <div className="relative">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Search runner..."
-                  value={selectedRunner ? selectedRunner.label : runnerSearchTerm}
-                  onChange={(e) => {
-                    setRunnerSearchTerm(e.target.value);
-                    if (!e.target.value) {
-                      setPersonId(null);
-                      setShowRunnerResults(false);
-                    }
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      performRunnerSearch();
-                    }
-                  }}
-                  disabled={isLoading}
-                />
-                <Button 
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={performRunnerSearch}
-                  disabled={isLoading || !runnerSearchTerm}
-                >
-                  Search
-                </Button>
-              </div>
-              {showRunnerResults && runnerSearchResults.length > 0 && (
-                <div className="absolute top-full left-0 right-0 bg-background border border-border rounded-md shadow-lg max-h-40 overflow-y-auto z-10 mt-1">
-                  {runnerSearchResults.map((runner) => (
-                    <div
-                      key={runner.id}
-                      className="px-3 py-2 hover:bg-accent cursor-pointer"
-                      onClick={() => {
-                        setPersonId(runner.id);
-                        setRunnerSearchTerm("");
-                        setShowRunnerResults(false);
-                        setRunnerSearchResults([]);
-                      }}
-                    >
-                      {runner.label}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Type a name, press Enter or click search to find runners.
-            </p>
+            <Select
+              value={personId ? String(personId) : "all"}
+              onValueChange={(v) => setPersonId(v === "all" ? null : Number(v))}
+              disabled={!club || isLoadingFilters}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Alla löpare" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Alla löpare</SelectItem>
+                {filterOptions?.runners.map((r) => (
+                  <SelectItem key={r.id} value={String(r.id)}>
+                    {r.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div>
@@ -483,7 +429,7 @@ export default function ResultsStatistics() {
             <Select 
               value={eventForm || "all"} 
               onValueChange={(v) => setEventForm(v === "all" ? "" : v)}
-              disabled={isLoading}
+              disabled={!club || isLoadingFilters}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Alla former" />
@@ -504,7 +450,7 @@ export default function ResultsStatistics() {
             <Select 
               value={distance || "all"} 
               onValueChange={(v) => setDistance(v === "all" ? "" : v)}
-              disabled={isLoading}
+              disabled={!club || isLoadingFilters}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Alla distanser" />
@@ -527,13 +473,18 @@ export default function ResultsStatistics() {
               placeholder="Vilken plats?"
               value={placement ?? ""} 
               onChange={(e) => setPlacement(e.target.value ? Number(e.target.value) : null)}
-              disabled={isLoading}
+              disabled={!club || isLoadingFilters}
             />
           </div>
         </section>
       )}
 
-      <Button onClick={() => setTrigger((x) => x + 1)}>{t(texts, "button.search", "Sök")}</Button>
+      <Button 
+        onClick={() => setTrigger((x) => x + 1)}
+        disabled={!club || isLoading}
+      >
+        {t(texts, "button.search", "Sök")}
+      </Button>
 
       {trigger > 0 && (
         <div className="text-sm text-muted-foreground">
