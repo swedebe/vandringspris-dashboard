@@ -142,6 +142,7 @@ const Export = () => {
     }
 
     // Step 3: Fetch person names
+    const PERSONS_NAME_SOURCE = "persons_public_names"; // switch here if needed
     let personNameMap: Record<number, string> = {};
     if (resultsData.length > 0) {
       const uniquePersonIds = [...new Set(resultsData.map(r => r.personid).filter(Boolean))];
@@ -149,7 +150,7 @@ const Export = () => {
       if (uniquePersonIds.length > 0) {
         try {
           const { data: persons, error: personsError } = await supabase
-            .from("persons")
+            .from(PERSONS_NAME_SOURCE)
             .select("personid, personnamegiven, personnamefamily")
             .in("personid", uniquePersonIds);
 
@@ -165,7 +166,10 @@ const Export = () => {
         } catch (error: any) {
           console.error("Persons fetch error:", error);
           // Non-blocking error - continue with empty names
-          setErrors({ general: "Obs: Kunde inte hämta löparnamn från persons – namnfält lämnas tomt." });
+          setErrors({ 
+            general: "Obs: Kunde inte hämta löparnamn (RLS/behörighet). CSV genereras utan namn. " +
+              (error?.message ? `Detalj: ${error.message}` : "")
+          });
         }
       }
     }
