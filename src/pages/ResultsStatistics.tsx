@@ -63,6 +63,8 @@ export default function ResultsStatistics() {
   const [distance, setDistance] = useState<string>("");
   const [placement, setPlacement] = useState<number | null>(null);
   const [runnerSearchTerm, setRunnerSearchTerm] = useState<string>("");
+  const [runnerSearchResults, setRunnerSearchResults] = useState<Array<{ id: number; label: string }>>([]);
+  const [showRunnerResults, setShowRunnerResults] = useState<boolean>(false);
 
   const [trigger, setTrigger] = useState(0);
 
@@ -290,8 +292,31 @@ export default function ResultsStatistics() {
       if (distance && !filterOptions.distances.includes(distance)) {
         setDistance("");
       }
+      // Clear runner search results when filters change
+      setRunnerSearchResults([]);
+      setShowRunnerResults(false);
     }
   }, [filterOptions, personId, eventForm, distance]);
+
+  // Function to perform manual runner search
+  const performRunnerSearch = () => {
+    if (!runnerSearchTerm || !filterOptions?.runners) {
+      setRunnerSearchResults([]);
+      setShowRunnerResults(false);
+      return;
+    }
+
+    // Clear previous selection
+    setPersonId(null);
+
+    // Filter runners based on search term
+    const searchResults = filterOptions.runners.filter(runner =>
+      runner.label.toLowerCase().includes(runnerSearchTerm.toLowerCase())
+    ).slice(0, 50);
+
+    setRunnerSearchResults(searchResults);
+    setShowRunnerResults(true);
+  };
 
   const { data: results = [], isFetching } = useQuery({
     queryKey: [
@@ -336,11 +361,6 @@ export default function ResultsStatistics() {
       return rows;
     },
   });
-
-  // Filter runners for typeahead
-  const filteredRunners = filterOptions?.runners.filter(runner =>
-    runner.label.toLowerCase().includes(runnerSearchTerm.toLowerCase())
-  ).slice(0, 50) || [];
 
   const selectedRunner = filterOptions?.runners.find(r => r.id === personId);
 
@@ -405,61 +425,46 @@ export default function ResultsStatistics() {
           <div>
             <label className="block text-sm mb-1">{t(texts, "filters.runner", "Löpare")}</label>
             <div className="relative">
-              <Input
-                placeholder="Sök efter löpare..."
-                value={selectedRunner ? selectedRunner.label : runnerSearchTerm}
-                onChange={(e) => {
-                  setRunnerSearchTerm(e.target.value);
-                  if (!e.target.value) {
-                    setPersonId(null);
-                  }
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    
-                    // Check if there are filtered suggestions visible
-                    if (runnerSearchTerm && !selectedRunner && filteredRunners.length > 0) {
-                      // Select first suggestion
-                      const firstRunner = filteredRunners[0];
-                      setPersonId(firstRunner.id);
-                      setRunnerSearchTerm("");
-                      setTrigger(x => x + 1);
-                    } else if (runnerSearchTerm && !selectedRunner) {
-                      // Try exact match (case-insensitive)
-                      const exactMatch = filterOptions?.runners.find(
-                        r => r.label.toLowerCase() === runnerSearchTerm.toLowerCase()
-                      );
-                      if (exactMatch) {
-                        setPersonId(exactMatch.id);
-                        setRunnerSearchTerm("");
-                        setTrigger(x => x + 1);
-                      } else {
-                        // Try numeric input
-                        const numericId = parseInt(runnerSearchTerm);
-                        if (!isNaN(numericId)) {
-                          setPersonId(numericId);
-                          setRunnerSearchTerm("");
-                          setTrigger(x => x + 1);
-                        }
-                      }
-                    } else if (selectedRunner) {
-                      // Already have a selection, just trigger search
-                      setTrigger(x => x + 1);
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Search runner..."
+                  value={selectedRunner ? selectedRunner.label : runnerSearchTerm}
+                  onChange={(e) => {
+                    setRunnerSearchTerm(e.target.value);
+                    if (!e.target.value) {
+                      setPersonId(null);
+                      setShowRunnerResults(false);
                     }
-                  }
-                }}
-                disabled={isLoading}
-              />
-              {runnerSearchTerm && !selectedRunner && filteredRunners.length > 0 && (
-                <div className="absolute top-full left-0 right-0 bg-background border border-border rounded-md shadow-lg max-h-40 overflow-y-auto z-10">
-                  {filteredRunners.map((runner) => (
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      performRunnerSearch();
+                    }
+                  }}
+                  disabled={isLoading}
+                />
+                <Button 
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={performRunnerSearch}
+                  disabled={isLoading || !runnerSearchTerm}
+                >
+                  Search
+                </Button>
+              </div>
+              {showRunnerResults && runnerSearchResults.length > 0 && (
+                <div className="absolute top-full left-0 right-0 bg-background border border-border rounded-md shadow-lg max-h-40 overflow-y-auto z-10 mt-1">
+                  {runnerSearchResults.map((runner) => (
                     <div
                       key={runner.id}
                       className="px-3 py-2 hover:bg-accent cursor-pointer"
                       onClick={() => {
                         setPersonId(runner.id);
                         setRunnerSearchTerm("");
+                        setShowRunnerResults(false);
+                        setRunnerSearchResults([]);
                       }}
                     >
                       {runner.label}
@@ -469,7 +474,7 @@ export default function ResultsStatistics() {
               )}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              {t(texts, "text.runnerHelp", "Sök på namn, värdet som lagras är person-ID")}
+              Type a name, press Enter or click search to find runners.
             </p>
           </div>
 
