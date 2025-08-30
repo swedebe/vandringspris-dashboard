@@ -10,11 +10,10 @@ export async function GET() {
       });
     }
 
-    // Get latest year with results
-    const latestYearResponse = await fetch(
-      `${supabaseUrl}/rest/v1/rpc/get_latest_year_with_results`,
+    // Get all events with years
+    const eventsResponse = await fetch(
+      `${supabaseUrl}/rest/v1/events?select=eventid,eventyear&eventyear=not.is.null&order=eventyear.desc`,
       {
-        method: 'POST',
         headers: {
           'Authorization': `Bearer ${serviceRoleKey}`,
           'apikey': serviceRoleKey,
@@ -23,57 +22,111 @@ export async function GET() {
       }
     );
 
+    if (!eventsResponse.ok) {
+      throw new Error('Failed to fetch events');
+    }
+
+    const events = await eventsResponse.json();
+    if (!events || events.length === 0) {
+      console.log('No events found');
+      return new Response(JSON.stringify({
+        latestYear: null,
+        defaultClub: null
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Get results to find which events have results
+    const resultsResponse = await fetch(
+      `${supabaseUrl}/rest/v1/results?select=eventid&limit=10000`,
+      {
+        headers: {
+          'Authorization': `Bearer ${serviceRoleKey}`,
+          'apikey': serviceRoleKey,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    if (!resultsResponse.ok) {
+      throw new Error('Failed to fetch results');
+    }
+
+    const results = await resultsResponse.json();
+    const eventIdsWithResults = new Set(results.map((r: any) => r.eventid));
+
+    // Find latest year that has results
     let latestYear: number | null = null;
-    if (latestYearResponse.ok) {
-      const yearData = await latestYearResponse.json();
-      latestYear = yearData?.[0]?.year || null;
-    }
-
-    // If no latest year found, try getting from events with results
-    if (!latestYear) {
-      const eventYearResponse = await fetch(
-        `${supabaseUrl}/rest/v1/events?select=eventyear&eventyear=not.is.null&order=eventyear.desc&limit=1`,
-        {
-          headers: {
-            'Authorization': `Bearer ${serviceRoleKey}`,
-            'apikey': serviceRoleKey,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-      
-      if (eventYearResponse.ok) {
-        const data = await eventYearResponse.json();
-        latestYear = data?.[0]?.eventyear || new Date().getFullYear();
+    for (const event of events) {
+      if (eventIdsWithResults.has(event.eventid)) {
+        latestYear = event.eventyear;
+        break;
       }
     }
 
     if (!latestYear) {
-      latestYear = new Date().getFullYear();
+      console.log('No events with results found');
+      return new Response(JSON.stringify({
+        latestYear: null,
+        defaultClub: null
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
     }
 
-    // Get default club for the latest year (if exactly one exists)
+    // Get events for that year
+    const yearEventsResponse = await fetch(
+      `${supabaseUrl}/rest/v1/events?select=eventid&eventyear=eq.${latestYear}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${serviceRoleKey}`,
+          'apikey': serviceRoleKey,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    if (!yearEventsResponse.ok) {
+      throw new Error('Failed to fetch year events');
+    }
+
+    const yearEvents = await yearEventsResponse.json();
+    const yearEventIds = yearEvents.map((e: any) => e.eventid);
+
+    if (yearEventIds.length === 0) {
+      console.log('No events found for year', latestYear);
+      return new Response(JSON.stringify({
+        latestYear,
+        defaultClub: null
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Get distinct clubs for that year
+    const clubsResponse = await fetch(
+      `${supabaseUrl}/rest/v1/results?select=clubparticipation&eventid=in.(${yearEventIds.join(',')})&clubparticipation=not.is.null`,
+      {
+        headers: {
+          'Authorization': `Bearer ${serviceRoleKey}`,
+          'apikey': serviceRoleKey,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
     let defaultClub: number | null = null;
-    if (latestYear) {
-      const clubsResponse = await fetch(
-        `${supabaseUrl}/rest/v1/rpc/get_clubs_for_year`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${serviceRoleKey}`,
-            'apikey': serviceRoleKey,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ year_param: latestYear })
-        }
-      );
-
-      if (clubsResponse.ok) {
-        const clubsData = await clubsResponse.json();
-        if (clubsData && clubsData.length === 1) {
-          defaultClub = clubsData[0].id;
-        }
+    if (clubsResponse.ok) {
+      const clubsData = await clubsResponse.json();
+      const distinctClubs = [...new Set(clubsData.map((r: any) => r.clubparticipation))];
+      if (distinctClubs.length === 1) {
+        defaultClub = distinctClubs[0] as number;
       }
+      console.log(`Found ${distinctClubs.length} clubs for year ${latestYear}`);
     }
 
     console.log(`Defaults API: latestYear=${latestYear}, defaultClub=${defaultClub}`);
@@ -90,7 +143,7 @@ export async function GET() {
     console.error('Error in defaults API:', error);
     return new Response(JSON.stringify({ 
       error: 'Internal server error',
-      latestYear: new Date().getFullYear(),
+      latestYear: null,
       defaultClub: null
     }), {
       status: 500,

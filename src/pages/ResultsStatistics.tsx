@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Helmet } from "react-helmet-async";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -8,6 +8,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useAppTexts, t } from "@/hooks/useAppTexts";
 import { formatSecondsToHMS } from "@/lib/utils";
+
+interface FilterOptions {
+  clubs: Array<{ id: number; label: string }>;
+  runners: Array<{ id: number; label: string }>;
+  forms: string[];
+  distances: string[];
+}
 
 export default function ResultsStatistics() {
   const { data: texts } = useAppTexts("results-statistics", [
@@ -21,6 +28,9 @@ export default function ResultsStatistics() {
     "filters.placement",
     "button.search",
     "text.noData",
+    "text.loading",
+    "text.yearRequired",
+    "text.runnerHelp",
     // Table headers
     "th.date",
     "th.event",
@@ -46,27 +56,87 @@ export default function ResultsStatistics() {
     "th.age",
   ]);
 
-  const [club, setClub] = useState<number | null>(461);
-  const [year, setYear] = useState<number | null>(new Date().getUTCFullYear());
+  const [year, setYear] = useState<number | null>(null);
+  const [club, setClub] = useState<number | null>(null);
   const [personId, setPersonId] = useState<number | null>(null);
-  const [eventForm, setEventForm] = useState<string | null>(null);
-  const [distance, setDistance] = useState<string | null>(null);
+  const [eventForm, setEventForm] = useState<string>("");
+  const [distance, setDistance] = useState<string>("");
   const [placement, setPlacement] = useState<number | null>(null);
+  const [runnerSearchTerm, setRunnerSearchTerm] = useState<string>("");
 
   const [trigger, setTrigger] = useState(0);
 
-  // Years for selected club
-  const { data: years = [] } = useQuery<number[]>({
-    queryKey: ["yearsForClub", club],
-    enabled: club != null,
+  // Get defaults on initial load
+  const { data: defaults, isLoading: isLoadingDefaults } = useQuery({
+    queryKey: ["resultsDefaults"],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc("rpc_years_for_club", { _club: club });
-      if (error) throw error;
-      return (data ?? []).map((r: any) => r.year as number);
+      const response = await fetch("/api/results-stats/defaults", {
+        cache: 'no-store'
+      });
+      if (!response.ok) {
+        throw new Error("Failed to fetch defaults");
+      }
+      return response.json();
     },
   });
 
-  const { data = [], isFetching } = useQuery({
+  // Set initial values when defaults are loaded
+  useEffect(() => {
+    if (defaults && !year) {
+      setYear(defaults.latestYear);
+      if (defaults.defaultClub) {
+        setClub(defaults.defaultClub);
+      }
+    }
+  }, [defaults, year]);
+
+  // Get filter options when year or club changes
+  const { data: filterOptions, isLoading: isLoadingFilters } = useQuery<FilterOptions>({
+    queryKey: ["resultsFilters", year, club],
+    enabled: year != null,
+    queryFn: async () => {
+      const response = await fetch("/api/results-stats/filters", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ year, club }),
+        cache: 'no-store'
+      });
+      if (!response.ok) {
+        throw new Error("Failed to fetch filters");
+      }
+      return response.json();
+    },
+  });
+
+  // Auto-select single club when filters change
+  useEffect(() => {
+    if (filterOptions?.clubs && filterOptions.clubs.length === 1 && !club) {
+      setClub(filterOptions.clubs[0].id);
+    }
+  }, [filterOptions, club]);
+
+  // Clear invalid selections when filters change
+  useEffect(() => {
+    if (filterOptions) {
+      // Clear person if not in current list
+      if (personId && !filterOptions.runners.some(r => r.id === personId)) {
+        setPersonId(null);
+        setRunnerSearchTerm("");
+      }
+      // Clear form if not in current list
+      if (eventForm && !filterOptions.forms.includes(eventForm)) {
+        setEventForm("");
+      }
+      // Clear distance if not in current list
+      if (distance && !filterOptions.distances.includes(distance)) {
+        setDistance("");
+      }
+    }
+  }, [filterOptions, personId, eventForm, distance]);
+
+  const { data: results = [], isFetching } = useQuery({
     queryKey: [
       "resultsSearch",
       club,
@@ -77,7 +147,7 @@ export default function ResultsStatistics() {
       placement,
       trigger,
     ],
-    enabled: trigger > 0,
+    enabled: trigger > 0 && year != null,
     queryFn: async () => {
       const { data, error } = await supabase.rpc("rpc_results_enriched", {
         _club: club,
@@ -93,12 +163,10 @@ export default function ResultsStatistics() {
       if (error) throw error;
       let rows = (data ?? []).filter((r: any) => r.personsex != null);
       if (eventForm) {
-        const f = eventForm.toLowerCase();
-        rows = rows.filter((r: any) => (r.eventform ?? "").toLowerCase() === f);
+        rows = rows.filter((r: any) => r.eventform === eventForm);
       }
       if (distance) {
-        const d = distance.toLowerCase();
-        rows = rows.filter((r: any) => (r.eventdistance ?? "").toLowerCase() === d);
+        rows = rows.filter((r: any) => r.eventdistance === distance);
       }
       if (placement != null) {
         rows = rows.filter((r: any) => r.resultposition === placement);
@@ -107,7 +175,14 @@ export default function ResultsStatistics() {
     },
   });
 
-  const yearsOptions = years.length > 0 ? years : [];
+  // Filter runners for typeahead
+  const filteredRunners = filterOptions?.runners.filter(runner =>
+    runner.label.toLowerCase().includes(runnerSearchTerm.toLowerCase())
+  ).slice(0, 50) || [];
+
+  const selectedRunner = filterOptions?.runners.find(r => r.id === personId);
+
+  const isLoading = isLoadingDefaults || isLoadingFilters;
 
   return (
     <main className="container mx-auto p-4 space-y-4">
@@ -119,47 +194,142 @@ export default function ResultsStatistics() {
 
       <h1 className="text-3xl font-semibold">{t(texts, "title", "Resultatstatistik")}</h1>
 
-      <section className="grid md:grid-cols-6 gap-3">
-        <div>
-          <label className="block text-sm mb-1">{t(texts, "filters.club", "Klubb (organisationId)")}</label>
-          <Input type="number" value={club ?? ""} onChange={(e) => setClub(e.target.value ? Number(e.target.value) : null)} />
+      {isLoading ? (
+        <div className="text-center py-8">
+          <p>{t(texts, "text.loading", "Laddar...")}</p>
         </div>
-        <div>
-          <label className="block text-sm mb-1">{t(texts, "filters.runner", "Löpare (personId)")}</label>
-          <Input type="number" value={personId ?? ""} onChange={(e) => setPersonId(e.target.value ? Number(e.target.value) : null)} />
+      ) : !year ? (
+        <div className="text-center py-8 text-muted-foreground">
+          <p>{t(texts, "text.noData", "Ingen data finns")}</p>
         </div>
-        <div>
-          <label className="block text-sm mb-1">{t(texts, "filters.year", "År")}</label>
-          {yearsOptions.length > 0 ? (
-            <Select value={String(year ?? "")} onValueChange={(v) => setYear(v ? Number(v) : null)}>
+      ) : (
+        <section className="grid md:grid-cols-6 gap-3">
+          <div>
+            <label className="block text-sm mb-1">
+              {t(texts, "filters.year", "År")} <span className="text-red-500">*</span>
+            </label>
+            <Input 
+              type="number" 
+              value={year ?? ""} 
+              onChange={(e) => setYear(e.target.value ? Number(e.target.value) : null)}
+              disabled={isLoading}
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              {t(texts, "text.yearRequired", "Obligatoriskt - förifyllt till senaste tillgängliga år")}
+            </p>
+          </div>
+          
+          <div>
+            <label className="block text-sm mb-1">{t(texts, "filters.club", "Klubb")}</label>
+            <Select 
+              value={String(club ?? "")} 
+              onValueChange={(v) => setClub(v ? Number(v) : null)}
+              disabled={isLoading}
+            >
               <SelectTrigger>
-                <SelectValue placeholder="Välj år" />
+                <SelectValue placeholder="Alla klubbar" />
               </SelectTrigger>
               <SelectContent>
-                {yearsOptions.map((y) => (
-                  <SelectItem key={y} value={String(y)}>
-                    {y}
+                <SelectItem value="">Alla klubbar</SelectItem>
+                {filterOptions?.clubs.map((c) => (
+                  <SelectItem key={c.id} value={String(c.id)}>
+                    {c.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-          ) : (
-            <Input type="number" value={year ?? ""} onChange={(e) => setYear(e.target.value ? Number(e.target.value) : null)} />
-          )}
-        </div>
-        <div>
-          <label className="block text-sm mb-1">{t(texts, "filters.eventform", "Tävlingsform")}</label>
-          <Input placeholder="t.ex. OL" value={eventForm ?? ""} onChange={(e) => setEventForm(e.target.value || null)} />
-        </div>
-        <div>
-          <label className="block text-sm mb-1">{t(texts, "filters.distance", "Distans")}</label>
-          <Input placeholder="t.ex. Medel" value={distance ?? ""} onChange={(e) => setDistance(e.target.value || null)} />
-        </div>
-        <div>
-          <label className="block text-sm mb-1">{t(texts, "filters.placement", "Placering")}</label>
-          <Input type="number" value={placement ?? ""} onChange={(e) => setPlacement(e.target.value ? Number(e.target.value) : null)} />
-        </div>
-      </section>
+          </div>
+
+          <div>
+            <label className="block text-sm mb-1">{t(texts, "filters.runner", "Löpare")}</label>
+            <div className="relative">
+              <Input
+                placeholder="Sök efter löpare..."
+                value={selectedRunner ? selectedRunner.label : runnerSearchTerm}
+                onChange={(e) => {
+                  setRunnerSearchTerm(e.target.value);
+                  if (!e.target.value) {
+                    setPersonId(null);
+                  }
+                }}
+                disabled={isLoading}
+              />
+              {runnerSearchTerm && !selectedRunner && filteredRunners.length > 0 && (
+                <div className="absolute top-full left-0 right-0 bg-background border border-border rounded-md shadow-lg max-h-40 overflow-y-auto z-10">
+                  {filteredRunners.map((runner) => (
+                    <div
+                      key={runner.id}
+                      className="px-3 py-2 hover:bg-accent cursor-pointer"
+                      onClick={() => {
+                        setPersonId(runner.id);
+                        setRunnerSearchTerm("");
+                      }}
+                    >
+                      {runner.label}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {t(texts, "text.runnerHelp", "Sök på namn, värdet som lagras är person-ID")}
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm mb-1">{t(texts, "filters.eventform", "Tävlingsform")}</label>
+            <Select 
+              value={eventForm} 
+              onValueChange={(v) => setEventForm(v)}
+              disabled={isLoading}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Alla former" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Alla former</SelectItem>
+                {filterOptions?.forms.map((form) => (
+                  <SelectItem key={form} value={form}>
+                    {form}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <label className="block text-sm mb-1">{t(texts, "filters.distance", "Distans")}</label>
+            <Select 
+              value={distance} 
+              onValueChange={(v) => setDistance(v)}
+              disabled={isLoading}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Alla distanser" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Alla distanser</SelectItem>
+                {filterOptions?.distances.map((dist) => (
+                  <SelectItem key={dist} value={dist}>
+                    {dist}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <label className="block text-sm mb-1">{t(texts, "filters.placement", "Placering")}</label>
+            <Input 
+              type="number" 
+              placeholder="Vilken plats?"
+              value={placement ?? ""} 
+              onChange={(e) => setPlacement(e.target.value ? Number(e.target.value) : null)}
+              disabled={isLoading}
+            />
+          </div>
+        </section>
+      )}
 
       <Button onClick={() => setTrigger((x) => x + 1)}>{t(texts, "button.search", "Sök")}</Button>
 
@@ -192,14 +362,14 @@ export default function ResultsStatistics() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {data.length === 0 && trigger > 0 && !isFetching ? (
+            {results.length === 0 && trigger > 0 && !isFetching ? (
               <TableRow>
                 <TableCell colSpan={22} className="text-center text-muted-foreground">
                   {t(texts, "text.noData", "Ingen data finns")}
                 </TableCell>
               </TableRow>
             ) : (
-              data.map((r: any) => (
+              results.map((r: any) => (
                 <TableRow key={`${r.eventraceid}-${r.personid}`}>
                   <TableCell>{r.eventdate}</TableCell>
                   <TableCell>{r.eventname}</TableCell>
