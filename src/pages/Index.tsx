@@ -50,6 +50,9 @@ const Index = () => {
           <Link className="underline text-primary" to="/results-statistics">
             {t(texts, "link.results", "Resultatstatistik")}
           </Link>
+          <Link className="underline text-primary" to="/export">
+            Export
+          </Link>
         </div>
       </nav>
     </main>
