@@ -10,7 +10,7 @@ import { useAppTexts, t } from "@/hooks/useAppTexts";
 import { formatSecondsToHMS } from "@/lib/utils";
 
 interface FilterOptions {
-  clubs: Array<{ id: number; label: string }>;
+  clubs: Array<{ id: string; label: string }>;
   runners: Array<{ id: number; label: string }>;
   forms: string[];
   distances: string[];
@@ -59,7 +59,7 @@ export default function ResultsStatistics() {
   ]);
 
   const [year, setYear] = useState<number | null>(null);
-  const [club, setClub] = useState<number | null>(null);
+  const [club, setClub] = useState<string | null>(null);
   const [personId, setPersonId] = useState<number | null>(null);
   const [eventForm, setEventForm] = useState<string>("");
   const [distance, setDistance] = useState<string>("");
@@ -125,7 +125,7 @@ export default function ResultsStatistics() {
 
       if (clubsError) throw clubsError;
 
-      const uniqueClubs = [...new Set(clubsData?.map(r => r.clubparticipation).filter(Boolean) || [])];
+      const uniqueClubs = [...new Set(clubsData?.map(r => r.clubparticipation ? String(r.clubparticipation) : null).filter(Boolean) || [])];
       const defaultClub = uniqueClubs.length === 1 ? uniqueClubs[0] : null;
 
       return { latestYear, defaultClub };
@@ -139,7 +139,7 @@ export default function ResultsStatistics() {
         setYear(defaults.latestYear as number);
       }
       if (defaults.defaultClub) {
-        setClub(defaults.defaultClub as number);
+        setClub(defaults.defaultClub as string);
       }
     }
   }, [defaults, year]);
@@ -171,7 +171,7 @@ export default function ResultsStatistics() {
 
       if (clubsError) throw clubsError;
 
-      const uniqueClubIds = [...new Set(clubsData?.map(r => r.clubparticipation).filter(Boolean) || [])];
+      const uniqueClubIds = [...new Set(clubsData?.map(r => r.clubparticipation ? String(r.clubparticipation) : null).filter(Boolean) || [])] as string[];
       
       // Try to get club names from eventorclubs table
       const { data: clubNamesData } = await supabase
@@ -179,17 +179,16 @@ export default function ResultsStatistics() {
         .select("organisationid, clubname")
         .in("organisationid", uniqueClubIds);
 
-      const clubNameMap = new Map(clubNamesData?.map(c => [c.organisationid, c.clubname]) || []);
-      let clubs = uniqueClubIds.map((id: number) => ({
+      const clubNameMap = new Map(clubNamesData?.map(c => [String(c.organisationid), c.clubname]) || []);
+      let clubs = uniqueClubIds.map((id: string) => ({
         id,
-        label: (clubNameMap.get(id) as string) || String(id)
+        label: (clubNameMap.get(id) as string) || id
       })).sort((a, b) => a.label.localeCompare(b.label, "sv"));
 
       // Keep the selected club visible in options
-      const clubIdNum = typeof club === "string" ? Number(club) : club;
-      if (clubIdNum && !clubs.some(c => c.id === clubIdNum)) {
-        const fallbackLabel = (clubNameMap.get(clubIdNum) as string) || String(clubIdNum);
-        clubs = [{ id: clubIdNum, label: fallbackLabel }, ...clubs];
+      if (club && !clubs.some(c => c.id === club)) {
+        const fallbackLabel = (clubNameMap.get(club) as string) || club;
+        clubs = [{ id: club, label: fallbackLabel }, ...clubs];
       }
 
       // If no club is selected yet, return empty lists for the other filters
@@ -206,7 +205,7 @@ export default function ResultsStatistics() {
           persons!inner(personid, personnamegiven, personnamefamily)
         `)
         .in("eventid", eventIds)
-        .eq("clubparticipation", clubIdNum);
+        .eq("clubparticipation", club);
 
       if (runnersError) throw runnersError;
 
@@ -240,12 +239,12 @@ export default function ResultsStatistics() {
 
       // Get forms and distances (scope by club if provided)
       let scopedEventIds = eventIds;
-      if (clubIdNum) {
+      if (club) {
         const { data: clubEventData } = await supabase
           .from("results")
           .select("eventid")
           .in("eventid", eventIds)
-          .eq("clubparticipation", clubIdNum);
+          .eq("clubparticipation", club);
         
         scopedEventIds = [...new Set(clubEventData?.map(r => r.eventid).filter(Boolean) || [])];
       }
@@ -263,7 +262,7 @@ export default function ResultsStatistics() {
       const distances: string[] = [...new Set(scopedEvents.map(e => e.eventdistance).filter(d => d?.trim()))] as string[]
       distances.sort((a: string, b: string) => a.localeCompare(b, "sv"));
 
-      return { clubs, runners, forms, distances } as FilterOptions;
+      return { clubs, runners, forms, distances };
     },
   });
 
@@ -314,7 +313,7 @@ export default function ResultsStatistics() {
     enabled: trigger > 0 && year != null,
     queryFn: async () => {
       const { data, error } = await supabase.rpc("rpc_results_enriched", {
-        _club: club,
+        _club: club ? Number(club) : null,
         _year: year,
         _gender: null,
         _personid: personId,
@@ -386,8 +385,8 @@ export default function ResultsStatistics() {
           <div>
             <label className="block text-sm mb-1">{t(texts, "filters.club", "Klubb")} <span className="text-red-500">*</span></label>
             <Select 
-              value={club ? String(club) : "all"} 
-              onValueChange={(v) => setClub(v === "all" ? null : Number(v))}
+              value={club || "all"} 
+              onValueChange={(v) => setClub(v === "all" ? null : v)}
               disabled={isLoading}
             >
               <SelectTrigger>
@@ -396,7 +395,7 @@ export default function ResultsStatistics() {
               <SelectContent>
                 <SelectItem value="all">Alla klubbar</SelectItem>
                 {filterOptions?.clubs.map((c) => (
-                  <SelectItem key={c.id} value={String(c.id)}>
+                  <SelectItem key={c.id} value={c.id}>
                     {c.label}
                   </SelectItem>
                 ))}
