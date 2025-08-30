@@ -463,6 +463,10 @@ export default function ResultsStatistics() {
                 ))}
               </SelectContent>
             </Select>
+            <p className="text-xs text-muted-foreground mt-1">
+              114 = FK Göingarna<br />
+              461 = FK Åsen
+            </p>
           </div>
 
           <div>
