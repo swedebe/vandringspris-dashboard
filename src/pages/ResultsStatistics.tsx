@@ -173,31 +173,40 @@ export default function ResultsStatistics() {
 
       const uniqueClubIds = [...new Set(clubsData?.map(r => r.clubparticipation ? String(r.clubparticipation) : null).filter(Boolean) || [])] as string[];
       
-      // Get club names from eventorclubs using 'name' column (like Index114)
-      let nameRows: Array<{ organisationid: string | number; name?: string }> = [];
-      try {
+      // Get club names from eventorclubs using 'name' column (like Index114)  
+      const idsForQuery = uniqueClubIds.map(id => Number(id)).filter(n => Number.isFinite(n));
+      
+      let clubNameRows: Array<{ organisationid: number; name?: string; clubname?: string }> = [];
+      {
         const { data, error } = await supabase
           .from("eventorclubs")
           .select("organisationid, name")
-          .in("organisationid", uniqueClubIds);
-        if (!error && data) nameRows = data;
-      } catch (err) {
-        console.warn("[clubs] name lookup failed:", err);
+          .in("organisationid", idsForQuery);
+        if (!error && data) clubNameRows = data;
       }
 
-      const clubNameMap = new Map<string, string>(
-        nameRows.map(r => [String(r.organisationid), r.name ?? String(r.organisationid)])
+      // Optional fallback if RLS blocks eventorclubs or returns 0 rows
+      if (!clubNameRows.length) {
+        const { data } = await supabase
+          .from("clubs")
+          .select("organisationid, clubname")
+          .in("organisationid", idsForQuery);
+        if (data) clubNameRows = data.map(r => ({ organisationid: r.organisationid, name: r.clubname }));
+      }
+
+      // Build label map (keys as strings)
+      const clubLabelMap = new Map<string, string>(
+        clubNameRows.map(r => [String(r.organisationid), (r.name ?? r.clubname ?? String(r.organisationid)) as string])
       );
       
-      let clubs = uniqueClubIds.map((id: string) => ({
+      let clubs = uniqueClubIds.map(id => ({
         id,
-        label: clubNameMap.get(id) ?? id
+        label: clubLabelMap.get(id) ?? id
       })).sort((a, b) => a.label.localeCompare(b.label, "sv"));
 
-      // Keep the selected club visible in options
+      // Keep current selection visible during refetch
       if (club && !clubs.some(c => c.id === club)) {
-        const fallbackLabel = clubNameMap.get(club) ?? club;
-        clubs = [{ id: club, label: fallbackLabel }, ...clubs];
+        clubs = [{ id: club, label: clubLabelMap.get(club) ?? club }, ...clubs];
       }
 
       // If no club is selected, return empty lists for dependent filters
@@ -370,6 +379,16 @@ export default function ResultsStatistics() {
       if (placement != null) {
         rows = rows.filter((r: any) => r.resultposition === placement);
       }
+
+      // Default sort: event date ascending (oldest first)
+      rows.sort((a, b) => {
+        const ts = (s?: string | null) => {
+          const n = s ? Date.parse(s) : NaN;
+          return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER; // push null/invalid to end
+        };
+        return ts(a.eventdate) - ts(b.eventdate);
+      });
+
       return rows;
     },
   });
@@ -585,7 +604,7 @@ export default function ResultsStatistics() {
                   <TableCell>{r.relayteamenddiff}</TableCell>
                   <TableCell>{r.relayteamendstatus}</TableCell>
                   <TableCell>{`${r.personnamegiven ?? ""} ${r.personnamefamily ?? ""}`.trim()}</TableCell>
-                  <TableCell>{r.clubparticipation}</TableCell>
+                  <TableCell>{filterOptions?.clubs.find(c => c.id === String(r.clubparticipation))?.label ?? String(r.clubparticipation)}</TableCell>
                   <TableCell>{r.personage}</TableCell>
                 </TableRow>
               ))
