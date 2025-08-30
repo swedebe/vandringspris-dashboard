@@ -208,12 +208,15 @@ export default function ResultsStatistics() {
       const xmlNamedRunners = runnersData?.filter(r => r.personid === 0 && r.xmlpersonname?.trim()) || [];
 
       // Get person names for personid > 0
-      const { data: personsData, error: personsError } = await supabase
-        .from("persons")
-        .select("personid, personnamegiven, personnamefamily")
-        .in("personid", positivePersonIds);
-      
-      if (personsError) throw personsError;
+      let personsData: any[] = [];
+      if (positivePersonIds.length > 0) {
+        const { data, error } = await supabase
+          .from("persons")
+          .select("personid, personnamegiven, personnamefamily")
+          .in("personid", positivePersonIds);
+        if (error) throw error;
+        personsData = data ?? [];
+      }
 
       const runners: Array<{ id: number; label: string }> = [];
 
