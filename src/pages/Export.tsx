@@ -61,195 +61,82 @@ const Export = () => {
     const personNum = personId.trim() ? parseInt(personId.trim()) : null;
     const yearNum = year.trim() ? parseInt(year.trim()) : null;
 
-    let eventsData: any[] = [];
-    let eventIds: number[] = [];
+    // Use the same RPC as Index114 with pagination
+    const limit = 10000;
+    let offset = 0;
+    let allData: any[] = [];
 
-    // Step 1: If year is provided, fetch matching events first
-    if (yearNum) {
-      const startDate = `${yearNum}-01-01`;
-      const endDate = `${yearNum}-12-31`;
-      
-      try {
-        const { data: events, error: eventsError } = await supabase
-          .from("events")
-          .select("eventid, eventdate, eventname")
-          .gte("eventdate", startDate)
-          .lte("eventdate", endDate);
-
-        if (eventsError) throw eventsError;
-        
-        eventsData = events || [];
-        eventIds = eventsData.map(e => e.eventid);
-        
-        // If no events found for the year, return empty results
-        if (eventIds.length === 0) {
-          return [];
-        }
-      } catch (error: any) {
-        console.error("Events fetch error:", error);
-        let errorMessage = "Export misslyckades (events)";
-        if (error?.message) errorMessage += `: ${error.message}`;
-        if (error?.code) errorMessage += ` (kod: ${error.code})`;
-        if (error?.hint) errorMessage += ` - ${error.hint}`;
-        throw new Error(errorMessage);
-      }
-    }
-
-    // Step 2: Query results with filters
-    let resultsData: any[] = [];
     try {
-      let query = supabase
-        .from("results")
-        .select(`
-          id,
-          eventid,
-          eventraceid,
-          personid,
-          resulttime,
-          resulttimediff,
-          resultposition,
-          resultcompetitorstatus,
-          points,
-          clubparticipation,
-          classtypeid,
-          klassfaktor,
-          relayleg,
-          relayteamname,
-          relayteamendposition,
-          relayteamenddiff
-        `)
-        .eq("clubparticipation", clubNum);
+      while (true) {
+        const { data, error } = await supabase.rpc('rpc_results_enriched', {
+          _club: clubNum,
+          _year: yearNum,
+          _gender: null,
+          _age_min: null,
+          _age_max: null,
+          _only_championship: null,
+          _personid: personNum,
+          _limit: limit,
+          _offset: offset
+        });
 
-      if (personNum) {
-        query = query.eq("personid", personNum);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+
+        allData = allData.concat(data);
+        if (data.length < limit) break;
+        offset += limit;
       }
 
-      if (yearNum && eventIds.length > 0) {
-        query = query.in("eventid", eventIds);
-      }
-
-      const { data: results, error: resultsError } = await query;
-      if (resultsError) throw resultsError;
-
-      resultsData = results || [];
+      // Transform data to include name field from RPC results
+      return allData.map(result => ({
+        ...result,
+        name: `${result.personnamegiven || ""} ${result.personnamefamily || ""}`.trim()
+      }));
     } catch (error: any) {
-      console.error("Results fetch error:", error);
-      let errorMessage = "Export misslyckades (results)";
+      console.error("RPC fetch error:", error);
+      let errorMessage = "Export misslyckades (rpc_results_enriched)";
       if (error?.message) errorMessage += `: ${error.message}`;
       if (error?.code) errorMessage += ` (kod: ${error.code})`;
       if (error?.hint) errorMessage += ` - ${error.hint}`;
       throw new Error(errorMessage);
     }
-
-    // Step 3: Fetch person names
-    const PERSONS_NAME_SOURCE = "persons_public_names"; // switch here if needed
-    let personNameMap: Record<number, string> = {};
-    if (resultsData.length > 0) {
-      const uniquePersonIds = [...new Set(resultsData.map(r => r.personid).filter(Boolean))];
-      
-      if (uniquePersonIds.length > 0) {
-        try {
-          const { data: persons, error: personsError } = await supabase
-            .from(PERSONS_NAME_SOURCE)
-            .select("personid, personnamegiven, personnamefamily")
-            .in("personid", uniquePersonIds);
-
-          if (personsError) throw personsError;
-
-          if (persons) {
-            personNameMap = persons.reduce((acc, person) => {
-              const fullName = `${person.personnamegiven || ""} ${person.personnamefamily || ""}`.trim();
-              acc[person.personid] = fullName;
-              return acc;
-            }, {} as Record<number, string>);
-          }
-        } catch (error: any) {
-          console.error("Persons fetch error:", error);
-          // Non-blocking error - continue with empty names
-          setErrors({ 
-            general: "Obs: Kunde inte hämta löparnamn (RLS/behörighet). CSV genereras utan namn. " +
-              (error?.message ? `Detalj: ${error.message}` : "")
-          });
-        }
-      }
-    }
-
-    // Step 4: Enrich with event data
-    if (eventsData.length > 0) {
-      const eventsById = eventsData.reduce((acc, event) => {
-        acc[event.eventid] = event;
-        return acc;
-      }, {} as Record<number, any>);
-
-      return resultsData.map(result => ({
-        ...result,
-        name: personNameMap[result.personid] || "",
-        events: eventsById[result.eventid] || { eventdate: null, eventname: null }
-      }));
-    }
-
-    // If no year filter, optionally fetch event data for enrichment
-    if (!yearNum && resultsData.length > 0) {
-      const uniqueEventIds = [...new Set(resultsData.map(r => r.eventid))];
-      const { data: events } = await supabase
-        .from("events")
-        .select("eventid, eventdate, eventname")
-        .in("eventid", uniqueEventIds);
-
-      if (events) {
-        const eventsById = events.reduce((acc, event) => {
-          acc[event.eventid] = event;
-          return acc;
-        }, {} as Record<number, any>);
-
-        return resultsData.map(result => ({
-          ...result,
-          name: personNameMap[result.personid] || "",
-          events: eventsById[result.eventid] || { eventdate: null, eventname: null }
-        }));
-      }
-    }
-
-    return resultsData.map(result => ({
-      ...result,
-      name: personNameMap[result.personid] || "",
-      events: { eventdate: null, eventname: null }
-    }));
   };
 
   const generateCsv = (data: any[]) => {
     const headers = [
-      "id",
-      "eventid",
       "eventraceid",
+      "eventid",
+      "eventdate",
+      "eventname",
+      "eventform",
+      "eventdistance",
+      "eventclassificationid",
       "personid",
       "name",
+      "personage",
+      "eventclassname",
+      "classtypeid",
+      "klassfaktor",
+      "points",
       "resulttime",
       "resulttimediff",
       "resultposition",
+      "classresultnumberofstarts",
       "resultcompetitorstatus",
-      "points",
-      "clubparticipation",
-      "classtypeid",
-      "klassfaktor",
-      "relayleg",
       "relayteamname",
+      "relayleg",
+      "relaylegoverallposition",
       "relayteamendposition",
       "relayteamenddiff",
-      "eventdate",
-      "eventname"
+      "clubparticipation"
     ];
 
     const csvRows = [headers.join(",")];
 
     data.forEach((row) => {
       const values = headers.map(header => {
-        let value = "";
-        if (header === "eventdate" || header === "eventname") {
-          value = row.events?.[header] || "";
-        } else {
-          value = row[header] || "";
-        }
+        let value = row[header] || "";
         
         // Escape CSV values
         if (typeof value === "string" && (value.includes(",") || value.includes('"') || value.includes("\n"))) {
