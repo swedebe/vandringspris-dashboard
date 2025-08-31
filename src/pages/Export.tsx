@@ -62,8 +62,8 @@ const Export = () => {
     const personNum = personId.trim() ? parseInt(personId.trim()) : null;
     const yearNum = year.trim() ? parseInt(year.trim()) : null;
 
-    // Chunked pagination to get ALL results (no row cap)
-    const pageSize = 10000;
+    // Use 1000-size pages to respect PostgREST limit
+    const pageSize = 1000;
     let offset = 0;
     let page = 0;
     const allRows: any[] = [];
@@ -74,7 +74,7 @@ const Export = () => {
         console.info(`[export] page=${page} offset=${offset} limit=${pageSize}`);
 
         // Show progress in UI
-        setProgressStatus(`Hämtar data... (sida ${page})`);
+        setProgressStatus(`Hämtar data... (sida ${page}, offset ${offset})`);
 
         const { data, error } = await supabase.rpc('rpc_results_enriched', {
           _club: clubNum,
@@ -97,13 +97,13 @@ const Export = () => {
         }
 
         const rows = data ?? [];
-        allRows.push(...rows);
+        if (rows.length === 0) break; // last page
 
-        // Update progress with running total
+        allRows.push(...rows);
         setProgressStatus(`Hämtat ${allRows.length} rader... (sida ${page})`);
 
-        if (rows.length < pageSize) break; // last page
-        offset += pageSize;
+        // Advance by the number of rows we actually received
+        offset += rows.length;
       }
 
       // Transform data to include name field from RPC results
