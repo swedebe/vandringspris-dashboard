@@ -9,6 +9,23 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
+function formatDuration(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "";
+  const n = typeof value === "number" ? value : Number(String(value).trim());
+  if (!Number.isFinite(n)) return String(value); // fallback: leave it as-is if not numeric
+
+  const sign = n < 0 ? "-" : "";
+  const s = Math.abs(Math.trunc(n)); // seconds, integer
+  const hours = Math.floor(s / 3600);
+  const minutes = Math.floor((s % 3600) / 60);
+  const seconds = s % 60;
+  const two = (x: number) => x.toString().padStart(2, "0");
+
+  return hours > 0
+    ? `${sign}${hours}:${two(minutes)}:${two(seconds)}`  // H:MM:SS
+    : `${sign}${two(minutes)}:${two(seconds)}`;         // MM:SS
+}
+
 const Export = () => {
   const { data: texts } = useAppTexts("export", [
     "title.export",
@@ -106,10 +123,13 @@ const Export = () => {
         offset += rows.length;
       }
 
-      // Transform data to include name field from RPC results
+      // Transform data to include name field and format duration fields
       return allRows.map(result => ({
         ...result,
-        name: `${result.personnamegiven || ""} ${result.personnamefamily || ""}`.trim()
+        name: `${result.personnamegiven || ""} ${result.personnamefamily || ""}`.trim(),
+        resulttime: formatDuration(result.resulttime),
+        resulttimediff: formatDuration(result.resulttimediff),
+        relayteamenddiff: formatDuration(result.relayteamenddiff)
       }));
     } catch (error: any) {
       console.error("RPC fetch error:", error);
