@@ -31,6 +31,7 @@ const Export = () => {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isGenerating, setIsGenerating] = useState(false);
   const [rowCount, setRowCount] = useState<number | null>(null);
+  const [progressStatus, setProgressStatus] = useState<string>("");
 
   const validateInputs = () => {
     const newErrors: Record<string, string> = {};
@@ -61,13 +62,20 @@ const Export = () => {
     const personNum = personId.trim() ? parseInt(personId.trim()) : null;
     const yearNum = year.trim() ? parseInt(year.trim()) : null;
 
-    // Use the same RPC as Index114 with pagination
-    const limit = 10000;
+    // Chunked pagination to get ALL results (no row cap)
+    const pageSize = 10000;
     let offset = 0;
-    let allData: any[] = [];
+    let page = 0;
+    const allRows: any[] = [];
 
     try {
-      while (true) {
+      for (;;) {
+        page += 1;
+        console.info(`[export] page=${page} offset=${offset} limit=${pageSize}`);
+
+        // Show progress in UI
+        setProgressStatus(`Hämtar data... (sida ${page})`);
+
         const { data, error } = await supabase.rpc('rpc_results_enriched', {
           _club: clubNum,
           _year: yearNum,
@@ -76,20 +84,30 @@ const Export = () => {
           _age_max: null,
           _only_championship: null,
           _personid: personNum,
-          _limit: limit,
+          _limit: pageSize,
           _offset: offset
         });
 
-        if (error) throw error;
-        if (!data || data.length === 0) break;
+        if (error) {
+          throw Object.assign(new Error(error.message), {
+            code: (error as any)?.code,
+            hint: (error as any)?.hint,
+            page, offset, pageSize
+          });
+        }
 
-        allData = allData.concat(data);
-        if (data.length < limit) break;
-        offset += limit;
+        const rows = data ?? [];
+        allRows.push(...rows);
+
+        // Update progress with running total
+        setProgressStatus(`Hämtat ${allRows.length} rader... (sida ${page})`);
+
+        if (rows.length < pageSize) break; // last page
+        offset += pageSize;
       }
 
       // Transform data to include name field from RPC results
-      return allData.map(result => ({
+      return allRows.map(result => ({
         ...result,
         name: `${result.personnamegiven || ""} ${result.personnamefamily || ""}`.trim()
       }));
@@ -99,6 +117,7 @@ const Export = () => {
       if (error?.message) errorMessage += `: ${error.message}`;
       if (error?.code) errorMessage += ` (kod: ${error.code})`;
       if (error?.hint) errorMessage += ` - ${error.hint}`;
+      if (error?.page) errorMessage += ` [sida=${error.page}, offset=${error.offset}, limit=${error.pageSize}]`;
       throw new Error(errorMessage);
     }
   };
@@ -155,10 +174,13 @@ const Export = () => {
 
     setIsGenerating(true);
     setRowCount(null);
+    setProgressStatus("");
+    setErrors({});
 
     try {
       const results = await fetchResults();
       setRowCount(results.length);
+      setProgressStatus(`${results.length} rader hämtades.`);
 
       const csvContent = generateCsv(results);
       
@@ -199,6 +221,7 @@ const Export = () => {
       }
       
       setErrors({ general: errorMessage });
+      setProgressStatus("");
     } finally {
       setIsGenerating(false);
     }
@@ -281,6 +304,12 @@ const Export = () => {
                 : t(texts, "button.generateCsv", "Generera CSV")
               }
             </Button>
+
+            {progressStatus && (
+              <Alert>
+                <AlertDescription>{progressStatus}</AlertDescription>
+              </Alert>
+            )}
 
             {errors.general && (
               <Alert variant="destructive">
