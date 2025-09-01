@@ -41,9 +41,6 @@ const Index = () => {
         <h1 className="text-3xl font-semibold">{t(texts, "title.home", "Startsida")}</h1>
         <p className="text-muted-foreground">{t(texts, "intro.home", "Välj en sida nedan.")}</p>
         <div className="flex flex-col items-center gap-2">
-          <Link className="underline text-primary" to="/index461">
-            {club461?.clubname ? `Vandringspris – ${club461.clubname}` : t(texts, "link.club461", "Vandringspris – FK Åsen")}
-          </Link>
           <Link className="underline text-primary" to="/index114">
             {club114?.clubname ? `Vandringspris – ${club114.clubname}` : "Vandringspris – Club 114"}
           </Link>
@@ -53,6 +50,17 @@ const Index = () => {
           <Link className="underline text-primary" to="/export">
             Export
           </Link>
+        </div>
+        <div className="mt-6 text-sm text-muted-foreground max-w-2xl">
+          <p className="mb-3">
+            Denna sida är byggd av David. Den hämtar data från Eventor för FK Göingarna och FK Åsen.
+          </p>
+          <p className="mb-3">
+            För FK Göingarna finns en sida som presenterar data som skulle kunna användas som underlag för att ge ut vandringspris. För FK Åsen finns ingen sådan sida då befintliga vandringspris inte kan räknas ut med det regelverk som finns.
+          </p>
+          <p>
+            Resultatstatistik och export kan användas av båda klubbar. Observera att för FK Åsen är poängvärdet felaktigt på tävlingar i öppen klass.
+          </p>
         </div>
       </nav>
     </main>
