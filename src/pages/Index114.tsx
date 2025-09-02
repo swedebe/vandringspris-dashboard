@@ -81,71 +81,22 @@ async function fetchAllResultsForPerson(personId: number, filters: {
   distances: string[];
   forms: string[];
 }) {
-  const limit = 10000;
-  let offset = 0;
-  let allData: any[] = [];
+  const rpcParams = buildRpcParams(filters);
+  
+  const { data, error } = await supabase.rpc('rpc_index461', {
+    years: rpcParams.years || null,
+    distances: rpcParams.distances || null,
+    form_groups: rpcParams.form_groups || null,
+    discipline_ids: rpcParams.discipline_ids || null,
+    genders: rpcParams.genders || null,
+    limit_rows: 10000,
+    offset_rows: 0
+  });
 
-  while (true) {
-    const { data, error } = await supabase.rpc('rpc_results_enriched', {
-      _club: CLUB_ID,
-      _year: filters.selectedYear,
-      _gender: filters.selectedGender === '__ALL__' ? null : (
-        filters.selectedGender === 'Damer' ? 'F' : 
-        filters.selectedGender === 'Herrar' ? 'M' : 
-        filters.selectedGender
-      ),
-      _age_min: null,
-      _age_max: null,
-      _only_championship: null,
-      _personid: personId,
-      _limit: limit,
-      _offset: offset
-    });
-
-    if (error) throw error;
-    if (!data || data.length === 0) break;
-
-    allData = allData.concat(data);
-    if (data.length < limit) break;
-    offset += limit;
-  }
-
-  // Apply client-side filtering to match the filters used in the main queries
-  let results = allData;
-
-  // Filter by disciplines
-  if (!filters.selectedDisciplines.includes(-1) && filters.selectedDisciplines.length > 0) {
-    results = results.filter(r => filters.selectedDisciplines.includes(r.disciplineid || 1)); // Default to 1 for Foot-O if null
-  }
-
-  // Filter by distances
-  if (!filters.distances.includes('__ALL__') && filters.distances.length > 0) {
-    const distanceMap: { [key: string]: string } = {
-      'Lång': 'Long',
-      'Medel': 'Middle', 
-      'Sprint': 'Sprint'
-    };
-    const dbDistances = filters.distances.map(d => distanceMap[d] || d);
-    results = results.filter(r => r.eventdistance && dbDistances.includes(r.eventdistance));
-  }
-
-  // Filter by forms
-  if (!filters.forms.includes('__ALL__') && filters.forms.length > 0) {
-    const formMap: { [key: string]: string | null } = {
-      'Stafett': 'RelaySingleDay',
-      'Flerdagars': 'IndMultiDay',
-      'Individuell': null
-    };
-    const mappedForms = filters.forms.map(f => formMap[f] !== undefined ? formMap[f] : f);
-    results = results.filter(r => {
-      if (mappedForms.includes(null)) {
-        return mappedForms.includes(r.eventform) || r.eventform === null;
-      }
-      return mappedForms.includes(r.eventform);
-    });
-  }
-
-  return results;
+  if (error) throw error;
+  
+  // Filter by person ID since rpc_index461 doesn't have a person filter
+  return (data || []).filter((r: any) => r.personid === personId);
 }
 
 type Result = {
@@ -219,63 +170,23 @@ function useResults(params: {
 }) {
   const { club, year = null, gender = '__ALL__', disciplineIds = [], onlyChampionship = null, ageMin = null, ageMax = null, distances = ['__ALL__'], forms = ['__ALL__'] } = params;
   return useQuery<Result[]>({
-    queryKey: ["rpc_results_enriched", club, year, gender, disciplineIds, onlyChampionship, ageMin, ageMax, distances, forms],
+    queryKey: ["rpc_index461", club, year, gender, disciplineIds, onlyChampionship, ageMin, ageMax, distances, forms],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('rpc_results_enriched', {
-        _club: club,
-        _year: year,
-        _gender: gender === '__ALL__' ? null : (
-          gender === 'Damer' ? 'F' : 
-          gender === 'Herrar' ? 'M' : 
-          gender
-        ),
-        _age_min: ageMin,
-        _age_max: ageMax,
-        _only_championship: onlyChampionship,
-        _personid: null,
-        _limit: 10000, // Increase limit to get more data for filtering
-        _offset: 0
-      });
-      if (error) throw error;
-
-      let results = data as Result[];
-
-      // Apply client-side filtering
+      const filters = { selectedYear: year, selectedGender: gender, selectedDisciplines: disciplineIds, distances, forms };
+      const rpcParams = buildRpcParams(filters);
       
-      // Filter by disciplines
-      if (!disciplineIds.includes(-1) && disciplineIds.length > 0) {
-        results = results.filter(r => disciplineIds.includes(r.disciplineid || 1)); // Default to 1 for Foot-O if null
-      }
-
-      // Filter by distances - map UI labels to database values
-      if (!distances.includes('__ALL__') && distances.length > 0) {
-        const distanceMap: { [key: string]: string } = {
-          'Lång': 'Long',
-          'Medel': 'Middle', 
-          'Sprint': 'Sprint'
-        };
-        const dbDistances = distances.map(d => distanceMap[d] || d);
-        results = results.filter(r => r.eventdistance && dbDistances.includes(r.eventdistance));
-      }
-
-      // Filter by forms - map UI labels to database values
-      if (!forms.includes('__ALL__') && forms.length > 0) {
-        const formMap: { [key: string]: string | null } = {
-          'Stafett': 'RelaySingleDay',
-          'Flerdagars': 'IndMultiDay',
-          'Individuell': null
-        };
-        const mappedForms = forms.map(f => formMap[f] !== undefined ? formMap[f] : f);
-        results = results.filter(r => {
-          // Handle null/individual case
-          if (mappedForms.includes(null)) {
-            return mappedForms.includes(r.eventform) || r.eventform === null;
-          }
-          return mappedForms.includes(r.eventform);
-        });
-      }
-
-      return results;
+      const { data, error } = await supabase.rpc('rpc_index461', {
+        years: rpcParams.years || null,
+        distances: rpcParams.distances || null,
+        form_groups: rpcParams.form_groups || null,
+        discipline_ids: rpcParams.discipline_ids || null,
+        genders: rpcParams.genders || null,
+        limit_rows: 10000,
+        offset_rows: 0
+      });
+      
+      if (error) throw error;
+      return data as Result[];
     },
   });
 }
@@ -308,74 +219,24 @@ function useKPIStats(params: {
   }>({
     queryKey: ["kpi_stats", CLUB_ID, year, gender, disciplineIds, distances, forms],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('rpc_results_enriched', {
-        _club: CLUB_ID,
-        _year: year,
-        _gender: gender === '__ALL__' ? null : (gender === 'Damer' ? 'F' : gender === 'Herrar' ? 'M' : gender),
-        _age_min: null,
-        _age_max: null,
-        _only_championship: null,
-        _personid: null,
-        _limit: 10000,
-        _offset: 0
+      const filters = { selectedYear: year, selectedGender: gender, selectedDisciplines: disciplineIds, distances, forms };
+      const rpcParams = buildRpcParams(filters);
+      
+      const { data, error } = await supabase.rpc('rpc_index461_stats', {
+        year: year || new Date().getFullYear(),
+        distances: rpcParams.distances || null,
+        form_groups: rpcParams.form_groups || null,
+        discipline_ids: rpcParams.discipline_ids || null,
+        genders: rpcParams.genders || null
       });
 
       if (error) throw error;
       
-      let results = data as Result[];
-
-      // Apply the same client-side filtering as useResults
-      
-      // Filter by disciplines
-      if (!disciplineIds.includes(-1) && disciplineIds.length > 0) {
-        results = results.filter(r => disciplineIds.includes(r.disciplineid || 1)); // Default to 1 for Foot-O if null
-      }
-
-      // Filter by distances
-      if (!distances.includes('__ALL__') && distances.length > 0) {
-        const distanceMap: { [key: string]: string } = {
-          'Lång': 'Long',
-          'Medel': 'Middle', 
-          'Sprint': 'Sprint'
-        };
-        const dbDistances = distances.map(d => distanceMap[d] || d);
-        results = results.filter(r => r.eventdistance && dbDistances.includes(r.eventdistance));
-      }
-
-      // Filter by forms
-      if (!forms.includes('__ALL__') && forms.length > 0) {
-        const formMap: { [key: string]: string | null } = {
-          'Stafett': 'RelaySingleDay',
-          'Flerdagars': 'IndMultiDay',
-          'Individuell': null
-        };
-        const mappedForms = forms.map(f => formMap[f] !== undefined ? formMap[f] : f);
-        results = results.filter(r => {
-          if (mappedForms.includes(null)) {
-            return mappedForms.includes(r.eventform) || r.eventform === null;
-          }
-          return mappedForms.includes(r.eventform);
-        });
-      }
-      
-      const uniqueCompetitions = new Set();
-      const uniqueParticipants = new Set();
-      let runsOk = 0;
-      
-      results.forEach(r => {
-        uniqueCompetitions.add(r.eventraceid);
-        if (r.resultcompetitorstatus !== 'DidNotStart') {
-          uniqueParticipants.add(r.personid);
-        }
-        if (r.resultcompetitorstatus === 'OK') {
-          runsOk++;
-        }
-      });
-
+      const stats = data?.[0] || { competitions_with_participation: 0, participants_with_start: 0, runs_ok: 0 };
       return {
-        competitions_with_participation: uniqueCompetitions.size,
-        participants_with_start: uniqueParticipants.size,
-        runs_ok: runsOk
+        competitions_with_participation: stats.competitions_with_participation || 0,
+        participants_with_start: stats.participants_with_start || 0,
+        runs_ok: stats.runs_ok || 0
       };
     },
   });
@@ -393,83 +254,20 @@ function useTopCompetitors(params: {
   return useQuery<{personid: number; personnamegiven: string; personnamefamily: string; competitions_count: number}[]>({
     queryKey: ["top_competitors", CLUB_ID, year, gender, disciplineIds, distances, forms, limit],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('rpc_results_enriched', {
-        _club: CLUB_ID,
-        _year: year,
-        _gender: gender === '__ALL__' ? null : (gender === 'Damer' ? 'F' : gender === 'Herrar' ? 'M' : gender),
-        _age_min: null,
-        _age_max: null,
-        _only_championship: null,
-        _personid: null,
-        _limit: 10000,
-        _offset: 0
+      const filters = { selectedYear: year, selectedGender: gender, selectedDisciplines: disciplineIds, distances, forms };
+      const rpcParams = buildRpcParams(filters);
+      
+      const { data, error } = await supabase.rpc('rpc_index461_top_competitors', {
+        year: year || new Date().getFullYear(),
+        limit_rows: limit,
+        distances: rpcParams.distances || null,
+        form_groups: rpcParams.form_groups || null,
+        discipline_ids: rpcParams.discipline_ids || null,
+        genders: rpcParams.genders || null
       });
 
       if (error) throw error;
-      
-      let results = data as Result[];
-
-      // Apply the same client-side filtering as useResults
-      
-      // Filter by disciplines
-      if (!disciplineIds.includes(-1) && disciplineIds.length > 0) {
-        results = results.filter(r => disciplineIds.includes(r.disciplineid || 1)); // Default to 1 for Foot-O if null
-      }
-
-      // Filter by distances
-      if (!distances.includes('__ALL__') && distances.length > 0) {
-        const distanceMap: { [key: string]: string } = {
-          'Lång': 'Long',
-          'Medel': 'Middle', 
-          'Sprint': 'Sprint'
-        };
-        const dbDistances = distances.map(d => distanceMap[d] || d);
-        results = results.filter(r => r.eventdistance && dbDistances.includes(r.eventdistance));
-      }
-
-      // Filter by forms
-      if (!forms.includes('__ALL__') && forms.length > 0) {
-        const formMap: { [key: string]: string | null } = {
-          'Stafett': 'RelaySingleDay',
-          'Flerdagars': 'IndMultiDay',
-          'Individuell': null
-        };
-        const mappedForms = forms.map(f => formMap[f] !== undefined ? formMap[f] : f);
-        results = results.filter(r => {
-          if (mappedForms.includes(null)) {
-            return mappedForms.includes(r.eventform) || r.eventform === null;
-          }
-          return mappedForms.includes(r.eventform);
-        });
-      }
-      
-      const competitionsByPerson = new Map<number, { name: string; competitions: Set<number> }>();
-      
-      results.forEach(r => {
-        if (['OK', 'Mispunch'].includes(r.resultcompetitorstatus || '')) {
-          const given = r.personnamegiven || '';
-          const family = r.personnamefamily || '';
-          const name = given || family ? `${given} ${family}`.trim() : '-';
-          
-          if (!competitionsByPerson.has(r.personid)) {
-            competitionsByPerson.set(r.personid, {
-              name,
-              competitions: new Set()
-            });
-          }
-          competitionsByPerson.get(r.personid)!.competitions.add(r.eventraceid);
-        }
-      });
-
-      return Array.from(competitionsByPerson.entries())
-        .map(([personid, { name, competitions }]) => ({
-          personid,
-          personnamegiven: name.split(' ')[0] || '',
-          personnamefamily: name.split(' ').slice(1).join(' ') || '',
-          competitions_count: competitions.size
-        }))
-        .sort((a, b) => b.competitions_count - a.competitions_count)
-        .slice(0, limit);
+      return data || [];
     },
   });
 }
@@ -485,55 +283,22 @@ function useCompetitionsByYear(params: {
   return useQuery<{ eventyear: number; events_count: number }[]>({
     queryKey: ["competitions_by_year", CLUB_ID, year, gender, disciplineIds, distances, forms],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('rpc_results_enriched', {
-        _club: CLUB_ID,
-        _year: year,
-        _gender: gender === '__ALL__' ? null : (gender === 'Damer' ? 'F' : gender === 'Herrar' ? 'M' : gender),
-        _age_min: null,
-        _age_max: null,
-        _only_championship: null,
-        _personid: null,
-        _limit: 10000,
-        _offset: 0
+      const filters = { selectedYear: year, selectedGender: gender, selectedDisciplines: disciplineIds, distances, forms };
+      const rpcParams = buildRpcParams(filters);
+      
+      const { data, error } = await supabase.rpc('rpc_index461', {
+        years: rpcParams.years || null,
+        distances: rpcParams.distances || null,
+        form_groups: rpcParams.form_groups || null,
+        discipline_ids: rpcParams.discipline_ids || null,
+        genders: rpcParams.genders || null,
+        limit_rows: 10000,
+        offset_rows: 0
       });
 
       if (error) throw error;
       
-      let results = data as Result[];
-
-      // Apply the same client-side filtering as other functions
-      
-      // Filter by disciplines
-      if (!disciplineIds.includes(-1) && disciplineIds.length > 0) {
-        results = results.filter(r => disciplineIds.includes(r.disciplineid || 1)); // Default to 1 for Foot-O if null
-      }
-
-      // Filter by distances
-      if (!distances.includes('__ALL__') && distances.length > 0) {
-        const distanceMap: { [key: string]: string } = {
-          'Lång': 'Long',
-          'Medel': 'Middle', 
-          'Sprint': 'Sprint'
-        };
-        const dbDistances = distances.map(d => distanceMap[d] || d);
-        results = results.filter(r => r.eventdistance && dbDistances.includes(r.eventdistance));
-      }
-
-      // Filter by forms
-      if (!forms.includes('__ALL__') && forms.length > 0) {
-        const formMap: { [key: string]: string | null } = {
-          'Stafett': 'RelaySingleDay',
-          'Flerdagars': 'IndMultiDay',
-          'Individuell': null
-        };
-        const mappedForms = forms.map(f => formMap[f] !== undefined ? formMap[f] : f);
-        results = results.filter(r => {
-          if (mappedForms.includes(null)) {
-            return mappedForms.includes(r.eventform) || r.eventform === null;
-          }
-          return mappedForms.includes(r.eventform);
-        });
-      }
+      const results = data as Result[];
       
       const competitionsByYear = new Map<number, Set<number>>();
       
@@ -944,54 +709,21 @@ export default function Index114() {
 
   // KPI data fetching functions
   const fetchCompetitionsData = async () => {
-    const { data: resultsData, error: resultsError } = await supabase.rpc('rpc_results_enriched', {
-      _club: CLUB_ID,
-      _year: selectedYear,
-      _gender: selectedGender === '__ALL__' ? null : (selectedGender === 'Damer' ? 'F' : selectedGender === 'Herrar' ? 'M' : selectedGender),
-      _age_min: null,
-      _age_max: null,
-      _only_championship: null,
-      _personid: null,
-      _limit: 10000, // Remove cap to show all competitions
-      _offset: 0
+    const filters = { selectedYear, selectedGender, selectedDisciplines, distances, forms };
+    const rpcParams = buildRpcParams(filters);
+    
+    const { data: resultsData, error: resultsError } = await supabase.rpc('rpc_index461', {
+      years: rpcParams.years || null,
+      distances: rpcParams.distances || null,
+      form_groups: rpcParams.form_groups || null,
+      discipline_ids: rpcParams.discipline_ids || null,
+      genders: rpcParams.genders || null,
+      limit_rows: 10000,
+      offset_rows: 0
     });
     
     if (resultsError) throw resultsError;
-
-    // Apply the same client-side filtering as other functions
-    let results = resultsData as any[];
-
-    // Filter by disciplines
-    if (!selectedDisciplines.includes(-1) && selectedDisciplines.length > 0) {
-      results = results.filter(r => selectedDisciplines.includes(r.disciplineid || 1)); // Default to 1 for Foot-O if null
-    }
-
-    // Filter by distances
-    if (!distances.includes('__ALL__') && distances.length > 0) {
-      const distanceMap: { [key: string]: string } = {
-        'Lång': 'Long',
-        'Medel': 'Middle', 
-        'Sprint': 'Sprint'
-      };
-      const dbDistances = distances.map(d => distanceMap[d] || d);
-      results = results.filter(r => r.eventdistance && dbDistances.includes(r.eventdistance));
-    }
-
-    // Filter by forms
-    if (!forms.includes('__ALL__') && forms.length > 0) {
-      const formMap: { [key: string]: string | null } = {
-        'Stafett': 'RelaySingleDay',
-        'Flerdagars': 'IndMultiDay',
-        'Individuell': null
-      };
-      const mappedForms = forms.map(f => formMap[f] !== undefined ? formMap[f] : f);
-      results = results.filter(r => {
-        if (mappedForms.includes(null)) {
-          return mappedForms.includes(r.eventform) || r.eventform === null;
-        }
-        return mappedForms.includes(r.eventform);
-      });
-    }
+    const results = resultsData as any[];
 
     // Get unique competitions with event details
     const uniqueCompetitions = new Map();
@@ -1014,7 +746,7 @@ export default function Index114() {
           eventdate: result.eventdate,
           eventname: result.eventname,
           eventorganiser: eventOrganiserMap.get(result.eventraceid) || '',
-          disciplineid: result.disciplineid, // Use actual discipline ID
+          disciplineid: result.disciplineid, // Correct: use disciplineid from result
           eventclassificationid: result.eventclassificationid,
           eventform: result.eventform,
           eventdistance: result.eventdistance
@@ -1029,55 +761,21 @@ export default function Index114() {
   };
 
   const fetchParticipantsData = async () => {
-    // Fetch participants with birth year from persons table
-    const { data: resultsData, error: resultsError } = await supabase.rpc('rpc_results_enriched', {
-      _club: CLUB_ID,
-      _year: selectedYear,
-      _gender: selectedGender === '__ALL__' ? null : (selectedGender === 'Damer' ? 'F' : selectedGender === 'Herrar' ? 'M' : selectedGender),
-      _age_min: null,
-      _age_max: null,
-      _only_championship: null,
-      _personid: null,
-      _limit: 10000,
-      _offset: 0
+    const filters = { selectedYear, selectedGender, selectedDisciplines, distances, forms };
+    const rpcParams = buildRpcParams(filters);
+    
+    const { data: resultsData, error: resultsError } = await supabase.rpc('rpc_index461', {
+      years: rpcParams.years || null,
+      distances: rpcParams.distances || null,
+      form_groups: rpcParams.form_groups || null,
+      discipline_ids: rpcParams.discipline_ids || null,
+      genders: rpcParams.genders || null,
+      limit_rows: 10000,
+      offset_rows: 0
     });
     
     if (resultsError) throw resultsError;
-
-    // Apply the same client-side filtering as other functions
-    let results = resultsData as any[];
-
-    // Filter by disciplines
-    if (!selectedDisciplines.includes(-1) && selectedDisciplines.length > 0) {
-      results = results.filter(r => selectedDisciplines.includes(r.disciplineid || 1)); // Default to 1 for Foot-O if null
-    }
-
-    // Filter by distances
-    if (!distances.includes('__ALL__') && distances.length > 0) {
-      const distanceMap: { [key: string]: string } = {
-        'Lång': 'Long',
-        'Medel': 'Middle', 
-        'Sprint': 'Sprint'
-      };
-      const dbDistances = distances.map(d => distanceMap[d] || d);
-      results = results.filter(r => r.eventdistance && dbDistances.includes(r.eventdistance));
-    }
-
-    // Filter by forms
-    if (!forms.includes('__ALL__') && forms.length > 0) {
-      const formMap: { [key: string]: string | null } = {
-        'Stafett': 'RelaySingleDay',
-        'Flerdagars': 'IndMultiDay',
-        'Individuell': null
-      };
-      const mappedForms = forms.map(f => formMap[f] !== undefined ? formMap[f] : f);
-      results = results.filter(r => {
-        if (mappedForms.includes(null)) {
-          return mappedForms.includes(r.eventform) || r.eventform === null;
-        }
-        return mappedForms.includes(r.eventform);
-      });
-    }
+    const results = resultsData as any[];
 
     // Get unique person IDs with at least 1 start
     const personIds = new Set();
