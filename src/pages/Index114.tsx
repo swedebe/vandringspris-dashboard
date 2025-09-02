@@ -28,12 +28,12 @@ function buildRpcParams(filters: {
   const { selectedYear, selectedGender, selectedDisciplines, distances, forms } = filters;
   const params: any = {};
 
-  // Year filter
+  // Year filter - only add if selected
   if (selectedYear !== null) {
     params.years = [selectedYear];
   }
 
-  // Distances filter - map UI values to database values
+  // Distances filter - map UI values to database values, only add if not 'all'
   if (!distances.includes('__ALL__') && distances.length > 0) {
     const distanceMap: { [key: string]: string } = {
       'Lång': 'Long',
@@ -43,22 +43,30 @@ function buildRpcParams(filters: {
     params.distances = distances.map(d => distanceMap[d] || d);
   }
 
-  // Forms filter - map UI values to database values
+  // Forms filter - handle individual races separately, never send '__NULL__' string
   if (!forms.includes('__ALL__') && forms.length > 0) {
-    const formMap: { [key: string]: string } = {
-      'Stafett': 'RelaySingleDay',
-      'Flerdagars': 'IndMultiDay',
-      'Individuell': '__NULL__'
-    };
-    params.form_groups = forms.map(f => formMap[f] || f);
+    const formGroups: string[] = [];
+    const hasIndividual = forms.includes('Individuell');
+    
+    // Add non-individual forms
+    if (forms.includes('Stafett')) formGroups.push('RelaySingleDay');
+    if (forms.includes('Flerdagars')) formGroups.push('IndMultiDay');
+    
+    // Only add form_groups if we have actual form groups (not individual)
+    if (formGroups.length > 0) {
+      params.form_groups = formGroups;
+    }
+    
+    // Store individual flag for client-side filtering
+    params._has_individual = hasIndividual;
   }
 
-  // Disciplines filter
+  // Disciplines filter - only add if not 'all'
   if (!selectedDisciplines.includes(-1) && selectedDisciplines.length > 0) {
     params.discipline_ids = selectedDisciplines.filter(id => id !== -1);
   }
 
-  // Gender filter - map UI value to database value
+  // Gender filter - only add if not 'all'
   if (selectedGender !== '__ALL__') {
     const genderMap: { [key: string]: string } = {
       'Damer': 'F',
@@ -83,7 +91,7 @@ async function fetchAllResultsForPerson(personId: number, filters: {
 }) {
   const rpcParams = buildRpcParams(filters);
   
-  // Build payload dynamically - omit null arrays
+  // Build payload dynamically - omit keys when not needed
   const payload: any = { limit_rows: 10000, offset_rows: 0 };
   if (rpcParams.years) payload.years = rpcParams.years;
   if (rpcParams.distances) payload.distances = rpcParams.distances;
@@ -94,11 +102,20 @@ async function fetchAllResultsForPerson(personId: number, filters: {
   console.debug('fetchAllResultsForPerson payload:', Object.keys(payload).reduce((acc, k) => ({ ...acc, [k]: Array.isArray(payload[k]) ? `[${payload[k].length}]` : payload[k] }), {}));
 
   const { data, error } = await supabase.rpc('rpc_index461', payload);
-
   if (error) throw error;
   
-  // Filter by person ID since rpc_index461 doesn't have a person filter
-  return (data || []).filter((r: any) => r.personid === personId);
+  let results = (data || []).filter((r: any) => r.personid === personId);
+  
+  // Apply individual form filtering client-side if needed
+  if (rpcParams._has_individual && filters.forms.includes('Individuell')) {
+    if (filters.forms.length === 1) {
+      // Only individual selected - show only eventform IS NULL
+      results = results.filter((r: any) => r.eventform === null);
+    }
+    // If multiple forms including individual, we already have the right data
+  }
+  
+  return results;
 }
 
 type Result = {
@@ -177,7 +194,7 @@ function useResults(params: {
       const filters = { selectedYear: year, selectedGender: gender, selectedDisciplines: disciplineIds, distances, forms };
       const rpcParams = buildRpcParams(filters);
       
-      // Build payload dynamically - omit null arrays
+      // Build payload dynamically - omit keys when not needed
       const payload: any = { limit_rows: 10000, offset_rows: 0 };
       if (rpcParams.years) payload.years = rpcParams.years;
       if (rpcParams.distances) payload.distances = rpcParams.distances;
@@ -188,9 +205,20 @@ function useResults(params: {
       console.debug('useResults payload:', Object.keys(payload).reduce((acc, k) => ({ ...acc, [k]: Array.isArray(payload[k]) ? `[${payload[k].length}]` : payload[k] }), {}));
 
       const { data, error } = await supabase.rpc('rpc_index461', payload);
-      
       if (error) throw error;
-      return data as Result[];
+      
+      let results = data as Result[];
+      
+      // Apply individual form filtering client-side if needed
+      if (rpcParams._has_individual && forms.includes('Individuell')) {
+        if (forms.length === 1) {
+          // Only individual selected - show only eventform IS NULL
+          results = results.filter((r: any) => r.eventform === null);
+        }
+        // If multiple forms including individual, we already have the right data
+      }
+      
+      return results;
     },
   });
 }
@@ -223,11 +251,13 @@ function useKPIStats(params: {
   }>({
     queryKey: ["kpi_stats", CLUB_ID, year, gender, disciplineIds, distances, forms],
     queryFn: async () => {
+      if (!year) return { competitions_with_participation: 0, participants_with_start: 0, runs_ok: 0 };
+      
       const filters = { selectedYear: year, selectedGender: gender, selectedDisciplines: disciplineIds, distances, forms };
       const rpcParams = buildRpcParams(filters);
       
-      // Build payload dynamically - omit null arrays, but keep required year
-      const payload: any = { year: year || new Date().getFullYear() };
+      // Build payload dynamically - omit keys when not needed, keep required year
+      const payload: any = { year };
       if (rpcParams.distances) payload.distances = rpcParams.distances;
       if (rpcParams.form_groups) payload.form_groups = rpcParams.form_groups;
       if (rpcParams.discipline_ids) payload.discipline_ids = rpcParams.discipline_ids;
@@ -236,7 +266,6 @@ function useKPIStats(params: {
       console.debug('useKPIStats payload:', Object.keys(payload).reduce((acc, k) => ({ ...acc, [k]: Array.isArray(payload[k]) ? `[${payload[k].length}]` : payload[k] }), {}));
 
       const { data, error } = await supabase.rpc('rpc_index461_stats', payload);
-
       if (error) throw error;
       
       const stats = data?.[0] || { competitions_with_participation: 0, participants_with_start: 0, runs_ok: 0 };
@@ -261,11 +290,13 @@ function useTopCompetitors(params: {
   return useQuery<{personid: number; personnamegiven: string; personnamefamily: string; competitions_count: number}[]>({
     queryKey: ["top_competitors", CLUB_ID, year, gender, disciplineIds, distances, forms, limit],
     queryFn: async () => {
+      if (!year) return [];
+      
       const filters = { selectedYear: year, selectedGender: gender, selectedDisciplines: disciplineIds, distances, forms };
       const rpcParams = buildRpcParams(filters);
       
-      // Build payload dynamically - omit null arrays, but keep required year and limit
-      const payload: any = { year: year || new Date().getFullYear(), limit_rows: limit };
+      // Build payload dynamically - omit keys when not needed, keep required year and limit
+      const payload: any = { year, limit_rows: limit };
       if (rpcParams.distances) payload.distances = rpcParams.distances;
       if (rpcParams.form_groups) payload.form_groups = rpcParams.form_groups;
       if (rpcParams.discipline_ids) payload.discipline_ids = rpcParams.discipline_ids;
@@ -274,7 +305,6 @@ function useTopCompetitors(params: {
       console.debug('useTopCompetitors payload:', Object.keys(payload).reduce((acc, k) => ({ ...acc, [k]: Array.isArray(payload[k]) ? `[${payload[k].length}]` : payload[k] }), {}));
 
       const { data, error } = await supabase.rpc('rpc_index461_top_competitors', payload);
-
       if (error) throw error;
       return data || [];
     },
@@ -295,7 +325,7 @@ function useCompetitionsByYear(params: {
       const filters = { selectedYear: year, selectedGender: gender, selectedDisciplines: disciplineIds, distances, forms };
       const rpcParams = buildRpcParams(filters);
       
-      // Build payload dynamically - omit null arrays
+      // Build payload dynamically - omit keys when not needed
       const payload: any = { limit_rows: 10000, offset_rows: 0 };
       if (rpcParams.years) payload.years = rpcParams.years;
       if (rpcParams.distances) payload.distances = rpcParams.distances;
@@ -306,10 +336,18 @@ function useCompetitionsByYear(params: {
       console.debug('useCompetitionsByYear payload:', Object.keys(payload).reduce((acc, k) => ({ ...acc, [k]: Array.isArray(payload[k]) ? `[${payload[k].length}]` : payload[k] }), {}));
 
       const { data, error } = await supabase.rpc('rpc_index461', payload);
-
       if (error) throw error;
       
-      const results = data as Result[];
+      let results = data as Result[];
+      
+      // Apply individual form filtering client-side if needed
+      if (rpcParams._has_individual && forms.includes('Individuell')) {
+        if (forms.length === 1) {
+          // Only individual selected - show only eventform IS NULL
+          results = results.filter((r: any) => r.eventform === null);
+        }
+        // If multiple forms including individual, we already have the right data
+      }
       
       const competitionsByYear = new Map<number, Set<number>>();
       
