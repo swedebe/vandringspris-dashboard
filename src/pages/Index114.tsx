@@ -110,7 +110,42 @@ async function fetchAllResultsForPerson(personId: number, filters: {
     offset += limit;
   }
 
-  return allData;
+  // Apply client-side filtering to match the filters used in the main queries
+  let results = allData;
+
+  // Filter by disciplines
+  if (!filters.selectedDisciplines.includes(-1) && filters.selectedDisciplines.length > 0) {
+    results = results.filter(r => filters.selectedDisciplines.includes(r.disciplineid || 1)); // Default to 1 for Foot-O if null
+  }
+
+  // Filter by distances
+  if (!filters.distances.includes('__ALL__') && filters.distances.length > 0) {
+    const distanceMap: { [key: string]: string } = {
+      'Lång': 'Long',
+      'Medel': 'Middle', 
+      'Sprint': 'Sprint'
+    };
+    const dbDistances = filters.distances.map(d => distanceMap[d] || d);
+    results = results.filter(r => r.eventdistance && dbDistances.includes(r.eventdistance));
+  }
+
+  // Filter by forms
+  if (!filters.forms.includes('__ALL__') && filters.forms.length > 0) {
+    const formMap: { [key: string]: string | null } = {
+      'Stafett': 'RelaySingleDay',
+      'Flerdagars': 'IndMultiDay',
+      'Individuell': null
+    };
+    const mappedForms = filters.forms.map(f => formMap[f] !== undefined ? formMap[f] : f);
+    results = results.filter(r => {
+      if (mappedForms.includes(null)) {
+        return mappedForms.includes(r.eventform) || r.eventform === null;
+      }
+      return mappedForms.includes(r.eventform);
+    });
+  }
+
+  return results;
 }
 
 type Result = {
@@ -198,12 +233,49 @@ function useResults(params: {
         _age_max: ageMax,
         _only_championship: onlyChampionship,
         _personid: null,
-        _limit: 500,
+        _limit: 10000, // Increase limit to get more data for filtering
         _offset: 0
       });
       if (error) throw error;
 
-      return data as Result[];
+      let results = data as Result[];
+
+      // Apply client-side filtering
+      
+      // Filter by disciplines
+      if (!disciplineIds.includes(-1) && disciplineIds.length > 0) {
+        results = results.filter(r => disciplineIds.includes(r.disciplineid || 1)); // Default to 1 for Foot-O if null
+      }
+
+      // Filter by distances - map UI labels to database values
+      if (!distances.includes('__ALL__') && distances.length > 0) {
+        const distanceMap: { [key: string]: string } = {
+          'Lång': 'Long',
+          'Medel': 'Middle', 
+          'Sprint': 'Sprint'
+        };
+        const dbDistances = distances.map(d => distanceMap[d] || d);
+        results = results.filter(r => r.eventdistance && dbDistances.includes(r.eventdistance));
+      }
+
+      // Filter by forms - map UI labels to database values
+      if (!forms.includes('__ALL__') && forms.length > 0) {
+        const formMap: { [key: string]: string | null } = {
+          'Stafett': 'RelaySingleDay',
+          'Flerdagars': 'IndMultiDay',
+          'Individuell': null
+        };
+        const mappedForms = forms.map(f => formMap[f] !== undefined ? formMap[f] : f);
+        results = results.filter(r => {
+          // Handle null/individual case
+          if (mappedForms.includes(null)) {
+            return mappedForms.includes(r.eventform) || r.eventform === null;
+          }
+          return mappedForms.includes(r.eventform);
+        });
+      }
+
+      return results;
     },
   });
 }
@@ -250,7 +322,42 @@ function useKPIStats(params: {
 
       if (error) throw error;
       
-      const results = data as Result[];
+      let results = data as Result[];
+
+      // Apply the same client-side filtering as useResults
+      
+      // Filter by disciplines
+      if (!disciplineIds.includes(-1) && disciplineIds.length > 0) {
+        results = results.filter(r => disciplineIds.includes(r.disciplineid || 1)); // Default to 1 for Foot-O if null
+      }
+
+      // Filter by distances
+      if (!distances.includes('__ALL__') && distances.length > 0) {
+        const distanceMap: { [key: string]: string } = {
+          'Lång': 'Long',
+          'Medel': 'Middle', 
+          'Sprint': 'Sprint'
+        };
+        const dbDistances = distances.map(d => distanceMap[d] || d);
+        results = results.filter(r => r.eventdistance && dbDistances.includes(r.eventdistance));
+      }
+
+      // Filter by forms
+      if (!forms.includes('__ALL__') && forms.length > 0) {
+        const formMap: { [key: string]: string | null } = {
+          'Stafett': 'RelaySingleDay',
+          'Flerdagars': 'IndMultiDay',
+          'Individuell': null
+        };
+        const mappedForms = forms.map(f => formMap[f] !== undefined ? formMap[f] : f);
+        results = results.filter(r => {
+          if (mappedForms.includes(null)) {
+            return mappedForms.includes(r.eventform) || r.eventform === null;
+          }
+          return mappedForms.includes(r.eventform);
+        });
+      }
+      
       const uniqueCompetitions = new Set();
       const uniqueParticipants = new Set();
       let runsOk = 0;
@@ -300,7 +407,42 @@ function useTopCompetitors(params: {
 
       if (error) throw error;
       
-      const results = data as Result[];
+      let results = data as Result[];
+
+      // Apply the same client-side filtering as useResults
+      
+      // Filter by disciplines
+      if (!disciplineIds.includes(-1) && disciplineIds.length > 0) {
+        results = results.filter(r => disciplineIds.includes(r.disciplineid || 1)); // Default to 1 for Foot-O if null
+      }
+
+      // Filter by distances
+      if (!distances.includes('__ALL__') && distances.length > 0) {
+        const distanceMap: { [key: string]: string } = {
+          'Lång': 'Long',
+          'Medel': 'Middle', 
+          'Sprint': 'Sprint'
+        };
+        const dbDistances = distances.map(d => distanceMap[d] || d);
+        results = results.filter(r => r.eventdistance && dbDistances.includes(r.eventdistance));
+      }
+
+      // Filter by forms
+      if (!forms.includes('__ALL__') && forms.length > 0) {
+        const formMap: { [key: string]: string | null } = {
+          'Stafett': 'RelaySingleDay',
+          'Flerdagars': 'IndMultiDay',
+          'Individuell': null
+        };
+        const mappedForms = forms.map(f => formMap[f] !== undefined ? formMap[f] : f);
+        results = results.filter(r => {
+          if (mappedForms.includes(null)) {
+            return mappedForms.includes(r.eventform) || r.eventform === null;
+          }
+          return mappedForms.includes(r.eventform);
+        });
+      }
+      
       const competitionsByPerson = new Map<number, { name: string; competitions: Set<number> }>();
       
       results.forEach(r => {
@@ -357,7 +499,42 @@ function useCompetitionsByYear(params: {
 
       if (error) throw error;
       
-      const results = data as Result[];
+      let results = data as Result[];
+
+      // Apply the same client-side filtering as other functions
+      
+      // Filter by disciplines
+      if (!disciplineIds.includes(-1) && disciplineIds.length > 0) {
+        results = results.filter(r => disciplineIds.includes(r.disciplineid || 1)); // Default to 1 for Foot-O if null
+      }
+
+      // Filter by distances
+      if (!distances.includes('__ALL__') && distances.length > 0) {
+        const distanceMap: { [key: string]: string } = {
+          'Lång': 'Long',
+          'Medel': 'Middle', 
+          'Sprint': 'Sprint'
+        };
+        const dbDistances = distances.map(d => distanceMap[d] || d);
+        results = results.filter(r => r.eventdistance && dbDistances.includes(r.eventdistance));
+      }
+
+      // Filter by forms
+      if (!forms.includes('__ALL__') && forms.length > 0) {
+        const formMap: { [key: string]: string | null } = {
+          'Stafett': 'RelaySingleDay',
+          'Flerdagars': 'IndMultiDay',
+          'Individuell': null
+        };
+        const mappedForms = forms.map(f => formMap[f] !== undefined ? formMap[f] : f);
+        results = results.filter(r => {
+          if (mappedForms.includes(null)) {
+            return mappedForms.includes(r.eventform) || r.eventform === null;
+          }
+          return mappedForms.includes(r.eventform);
+        });
+      }
+      
       const competitionsByYear = new Map<number, Set<number>>();
       
       results.forEach(r => {
@@ -781,12 +958,47 @@ export default function Index114() {
     
     if (resultsError) throw resultsError;
 
+    // Apply the same client-side filtering as other functions
+    let results = resultsData as any[];
+
+    // Filter by disciplines
+    if (!selectedDisciplines.includes(-1) && selectedDisciplines.length > 0) {
+      results = results.filter(r => selectedDisciplines.includes(r.disciplineid || 1)); // Default to 1 for Foot-O if null
+    }
+
+    // Filter by distances
+    if (!distances.includes('__ALL__') && distances.length > 0) {
+      const distanceMap: { [key: string]: string } = {
+        'Lång': 'Long',
+        'Medel': 'Middle', 
+        'Sprint': 'Sprint'
+      };
+      const dbDistances = distances.map(d => distanceMap[d] || d);
+      results = results.filter(r => r.eventdistance && dbDistances.includes(r.eventdistance));
+    }
+
+    // Filter by forms
+    if (!forms.includes('__ALL__') && forms.length > 0) {
+      const formMap: { [key: string]: string | null } = {
+        'Stafett': 'RelaySingleDay',
+        'Flerdagars': 'IndMultiDay',
+        'Individuell': null
+      };
+      const mappedForms = forms.map(f => formMap[f] !== undefined ? formMap[f] : f);
+      results = results.filter(r => {
+        if (mappedForms.includes(null)) {
+          return mappedForms.includes(r.eventform) || r.eventform === null;
+        }
+        return mappedForms.includes(r.eventform);
+      });
+    }
+
     // Get unique competitions with event details
     const uniqueCompetitions = new Map();
     const { data: eventsData, error: eventsError } = await supabase
       .from('events')
       .select('eventraceid, eventorganiser')
-      .in('eventraceid', [...new Set((resultsData as any[]).map(r => r.eventraceid))]);
+      .in('eventraceid', [...new Set(results.map(r => r.eventraceid))]);
     
     if (eventsError) throw eventsError;
     
@@ -795,14 +1007,14 @@ export default function Index114() {
       eventOrganiserMap.set(event.eventraceid, event.eventorganiser);
     });
 
-    (resultsData as any[]).forEach(result => {
+    results.forEach(result => {
       const competitionKey = result.eventraceid;
       if (!uniqueCompetitions.has(competitionKey)) {
         uniqueCompetitions.set(competitionKey, {
           eventdate: result.eventdate,
           eventname: result.eventname,
           eventorganiser: eventOrganiserMap.get(result.eventraceid) || '',
-          disciplineid: result.eventclassificationid, // Use classification as sport type
+          disciplineid: result.disciplineid, // Use actual discipline ID
           eventclassificationid: result.eventclassificationid,
           eventform: result.eventform,
           eventdistance: result.eventdistance
@@ -832,9 +1044,44 @@ export default function Index114() {
     
     if (resultsError) throw resultsError;
 
+    // Apply the same client-side filtering as other functions
+    let results = resultsData as any[];
+
+    // Filter by disciplines
+    if (!selectedDisciplines.includes(-1) && selectedDisciplines.length > 0) {
+      results = results.filter(r => selectedDisciplines.includes(r.disciplineid || 1)); // Default to 1 for Foot-O if null
+    }
+
+    // Filter by distances
+    if (!distances.includes('__ALL__') && distances.length > 0) {
+      const distanceMap: { [key: string]: string } = {
+        'Lång': 'Long',
+        'Medel': 'Middle', 
+        'Sprint': 'Sprint'
+      };
+      const dbDistances = distances.map(d => distanceMap[d] || d);
+      results = results.filter(r => r.eventdistance && dbDistances.includes(r.eventdistance));
+    }
+
+    // Filter by forms
+    if (!forms.includes('__ALL__') && forms.length > 0) {
+      const formMap: { [key: string]: string | null } = {
+        'Stafett': 'RelaySingleDay',
+        'Flerdagars': 'IndMultiDay',
+        'Individuell': null
+      };
+      const mappedForms = forms.map(f => formMap[f] !== undefined ? formMap[f] : f);
+      results = results.filter(r => {
+        if (mappedForms.includes(null)) {
+          return mappedForms.includes(r.eventform) || r.eventform === null;
+        }
+        return mappedForms.includes(r.eventform);
+      });
+    }
+
     // Get unique person IDs with at least 1 start
     const personIds = new Set();
-    (resultsData as any[]).forEach(result => {
+    results.forEach(result => {
       if (result.resultcompetitorstatus !== 'DidNotStart') {
         personIds.add(result.personid);
       }
