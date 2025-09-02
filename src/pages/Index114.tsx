@@ -83,15 +83,17 @@ async function fetchAllResultsForPerson(personId: number, filters: {
 }) {
   const rpcParams = buildRpcParams(filters);
   
-  const { data, error } = await supabase.rpc('rpc_index461', {
-    years: rpcParams.years || null,
-    distances: rpcParams.distances || null,
-    form_groups: rpcParams.form_groups || null,
-    discipline_ids: rpcParams.discipline_ids || null,
-    genders: rpcParams.genders || null,
-    limit_rows: 10000,
-    offset_rows: 0
-  });
+  // Build payload dynamically - omit null arrays
+  const payload: any = { limit_rows: 10000, offset_rows: 0 };
+  if (rpcParams.years) payload.years = rpcParams.years;
+  if (rpcParams.distances) payload.distances = rpcParams.distances;
+  if (rpcParams.form_groups) payload.form_groups = rpcParams.form_groups;
+  if (rpcParams.discipline_ids) payload.discipline_ids = rpcParams.discipline_ids;
+  if (rpcParams.genders) payload.genders = rpcParams.genders;
+  
+  console.debug('fetchAllResultsForPerson payload:', Object.keys(payload).reduce((acc, k) => ({ ...acc, [k]: Array.isArray(payload[k]) ? `[${payload[k].length}]` : payload[k] }), {}));
+
+  const { data, error } = await supabase.rpc('rpc_index461', payload);
 
   if (error) throw error;
   
@@ -175,15 +177,17 @@ function useResults(params: {
       const filters = { selectedYear: year, selectedGender: gender, selectedDisciplines: disciplineIds, distances, forms };
       const rpcParams = buildRpcParams(filters);
       
-      const { data, error } = await supabase.rpc('rpc_index461', {
-        years: rpcParams.years || null,
-        distances: rpcParams.distances || null,
-        form_groups: rpcParams.form_groups || null,
-        discipline_ids: rpcParams.discipline_ids || null,
-        genders: rpcParams.genders || null,
-        limit_rows: 10000,
-        offset_rows: 0
-      });
+      // Build payload dynamically - omit null arrays
+      const payload: any = { limit_rows: 10000, offset_rows: 0 };
+      if (rpcParams.years) payload.years = rpcParams.years;
+      if (rpcParams.distances) payload.distances = rpcParams.distances;
+      if (rpcParams.form_groups) payload.form_groups = rpcParams.form_groups;
+      if (rpcParams.discipline_ids) payload.discipline_ids = rpcParams.discipline_ids;
+      if (rpcParams.genders) payload.genders = rpcParams.genders;
+      
+      console.debug('useResults payload:', Object.keys(payload).reduce((acc, k) => ({ ...acc, [k]: Array.isArray(payload[k]) ? `[${payload[k].length}]` : payload[k] }), {}));
+
+      const { data, error } = await supabase.rpc('rpc_index461', payload);
       
       if (error) throw error;
       return data as Result[];
@@ -222,13 +226,16 @@ function useKPIStats(params: {
       const filters = { selectedYear: year, selectedGender: gender, selectedDisciplines: disciplineIds, distances, forms };
       const rpcParams = buildRpcParams(filters);
       
-      const { data, error } = await supabase.rpc('rpc_index461_stats', {
-        year: year || new Date().getFullYear(),
-        distances: rpcParams.distances || null,
-        form_groups: rpcParams.form_groups || null,
-        discipline_ids: rpcParams.discipline_ids || null,
-        genders: rpcParams.genders || null
-      });
+      // Build payload dynamically - omit null arrays, but keep required year
+      const payload: any = { year: year || new Date().getFullYear() };
+      if (rpcParams.distances) payload.distances = rpcParams.distances;
+      if (rpcParams.form_groups) payload.form_groups = rpcParams.form_groups;
+      if (rpcParams.discipline_ids) payload.discipline_ids = rpcParams.discipline_ids;
+      if (rpcParams.genders) payload.genders = rpcParams.genders;
+      
+      console.debug('useKPIStats payload:', Object.keys(payload).reduce((acc, k) => ({ ...acc, [k]: Array.isArray(payload[k]) ? `[${payload[k].length}]` : payload[k] }), {}));
+
+      const { data, error } = await supabase.rpc('rpc_index461_stats', payload);
 
       if (error) throw error;
       
@@ -257,14 +264,16 @@ function useTopCompetitors(params: {
       const filters = { selectedYear: year, selectedGender: gender, selectedDisciplines: disciplineIds, distances, forms };
       const rpcParams = buildRpcParams(filters);
       
-      const { data, error } = await supabase.rpc('rpc_index461_top_competitors', {
-        year: year || new Date().getFullYear(),
-        limit_rows: limit,
-        distances: rpcParams.distances || null,
-        form_groups: rpcParams.form_groups || null,
-        discipline_ids: rpcParams.discipline_ids || null,
-        genders: rpcParams.genders || null
-      });
+      // Build payload dynamically - omit null arrays, but keep required year and limit
+      const payload: any = { year: year || new Date().getFullYear(), limit_rows: limit };
+      if (rpcParams.distances) payload.distances = rpcParams.distances;
+      if (rpcParams.form_groups) payload.form_groups = rpcParams.form_groups;
+      if (rpcParams.discipline_ids) payload.discipline_ids = rpcParams.discipline_ids;
+      if (rpcParams.genders) payload.genders = rpcParams.genders;
+      
+      console.debug('useTopCompetitors payload:', Object.keys(payload).reduce((acc, k) => ({ ...acc, [k]: Array.isArray(payload[k]) ? `[${payload[k].length}]` : payload[k] }), {}));
+
+      const { data, error } = await supabase.rpc('rpc_index461_top_competitors', payload);
 
       if (error) throw error;
       return data || [];
@@ -286,15 +295,17 @@ function useCompetitionsByYear(params: {
       const filters = { selectedYear: year, selectedGender: gender, selectedDisciplines: disciplineIds, distances, forms };
       const rpcParams = buildRpcParams(filters);
       
-      const { data, error } = await supabase.rpc('rpc_index461', {
-        years: rpcParams.years || null,
-        distances: rpcParams.distances || null,
-        form_groups: rpcParams.form_groups || null,
-        discipline_ids: rpcParams.discipline_ids || null,
-        genders: rpcParams.genders || null,
-        limit_rows: 10000,
-        offset_rows: 0
-      });
+      // Build payload dynamically - omit null arrays
+      const payload: any = { limit_rows: 10000, offset_rows: 0 };
+      if (rpcParams.years) payload.years = rpcParams.years;
+      if (rpcParams.distances) payload.distances = rpcParams.distances;
+      if (rpcParams.form_groups) payload.form_groups = rpcParams.form_groups;
+      if (rpcParams.discipline_ids) payload.discipline_ids = rpcParams.discipline_ids;
+      if (rpcParams.genders) payload.genders = rpcParams.genders;
+      
+      console.debug('useCompetitionsByYear payload:', Object.keys(payload).reduce((acc, k) => ({ ...acc, [k]: Array.isArray(payload[k]) ? `[${payload[k].length}]` : payload[k] }), {}));
+
+      const { data, error } = await supabase.rpc('rpc_index461', payload);
 
       if (error) throw error;
       
@@ -712,15 +723,17 @@ export default function Index114() {
     const filters = { selectedYear, selectedGender, selectedDisciplines, distances, forms };
     const rpcParams = buildRpcParams(filters);
     
-    const { data: resultsData, error: resultsError } = await supabase.rpc('rpc_index461', {
-      years: rpcParams.years || null,
-      distances: rpcParams.distances || null,
-      form_groups: rpcParams.form_groups || null,
-      discipline_ids: rpcParams.discipline_ids || null,
-      genders: rpcParams.genders || null,
-      limit_rows: 10000,
-      offset_rows: 0
-    });
+    // Build payload dynamically - omit null arrays
+    const payload: any = { limit_rows: 10000, offset_rows: 0 };
+    if (rpcParams.years) payload.years = rpcParams.years;
+    if (rpcParams.distances) payload.distances = rpcParams.distances;
+    if (rpcParams.form_groups) payload.form_groups = rpcParams.form_groups;
+    if (rpcParams.discipline_ids) payload.discipline_ids = rpcParams.discipline_ids;
+    if (rpcParams.genders) payload.genders = rpcParams.genders;
+    
+    console.debug('fetchCompetitionsData payload:', Object.keys(payload).reduce((acc, k) => ({ ...acc, [k]: Array.isArray(payload[k]) ? `[${payload[k].length}]` : payload[k] }), {}));
+
+    const { data: resultsData, error: resultsError } = await supabase.rpc('rpc_index461', payload);
     
     if (resultsError) throw resultsError;
     const results = resultsData as any[];
@@ -764,15 +777,17 @@ export default function Index114() {
     const filters = { selectedYear, selectedGender, selectedDisciplines, distances, forms };
     const rpcParams = buildRpcParams(filters);
     
-    const { data: resultsData, error: resultsError } = await supabase.rpc('rpc_index461', {
-      years: rpcParams.years || null,
-      distances: rpcParams.distances || null,
-      form_groups: rpcParams.form_groups || null,
-      discipline_ids: rpcParams.discipline_ids || null,
-      genders: rpcParams.genders || null,
-      limit_rows: 10000,
-      offset_rows: 0
-    });
+    // Build payload dynamically - omit null arrays
+    const payload: any = { limit_rows: 10000, offset_rows: 0 };
+    if (rpcParams.years) payload.years = rpcParams.years;
+    if (rpcParams.distances) payload.distances = rpcParams.distances;
+    if (rpcParams.form_groups) payload.form_groups = rpcParams.form_groups;
+    if (rpcParams.discipline_ids) payload.discipline_ids = rpcParams.discipline_ids;
+    if (rpcParams.genders) payload.genders = rpcParams.genders;
+    
+    console.debug('fetchParticipantsData payload:', Object.keys(payload).reduce((acc, k) => ({ ...acc, [k]: Array.isArray(payload[k]) ? `[${payload[k].length}]` : payload[k] }), {}));
+
+    const { data: resultsData, error: resultsError } = await supabase.rpc('rpc_index461', payload);
     
     if (resultsError) throw resultsError;
     const results = resultsData as any[];
