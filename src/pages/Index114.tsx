@@ -1262,35 +1262,6 @@ export default function Index114() {
         </DialogContent>
       </Dialog>
 
-      {/* Proxy buttons section */}
-      {hasSupabaseConfig() && (
-        <section className="border-t pt-4">
-          <div className="text-sm text-muted-foreground mb-2">Uppdatera data:</div>
-          <div className="flex gap-2 flex-wrap">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleProxy("/api/update-persons", "Uppdatera personer")}
-            >
-              {t(texts, "button.updatePersons", "Uppdatera personer")}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleProxy("/api/update-events", "Uppdatera tävlingar")}
-            >
-              {t(texts, "button.updateEvents", "Uppdatera tävlingar")}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleProxy("/api/update-results", "Uppdatera resultat")}
-            >
-              {t(texts, "button.updateResults", "Uppdatera resultat")}
-            </Button>
-          </div>
-        </section>
-      )}
     </main>
   );
 }
