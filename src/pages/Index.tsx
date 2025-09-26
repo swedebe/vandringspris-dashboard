@@ -50,6 +50,9 @@ const Index = () => {
           <Link className="underline text-primary" to="/export">
             Export
           </Link>
+          <Link className="underline text-primary" to="/lok-support">
+            Tävlingar för LOK-stöd
+          </Link>
         </div>
         <div className="mt-6 text-sm text-muted-foreground max-w-2xl">
           <p className="mb-3">

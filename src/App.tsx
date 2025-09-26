@@ -12,6 +12,7 @@ import Index114 from "./pages/Index114";
 import ResultsStatistics from "./pages/ResultsStatistics";
 import Export from "./pages/Export";
 import Setup from "./pages/Setup";
+import LokSupport from "./pages/LokSupport";
 import ConfigBanner from "./components/ConfigBanner";
 
 const queryClient = new QueryClient();
@@ -31,6 +32,7 @@ const App = () => (
               <Route path="/results-statistics" element={<ResultsStatistics />} />
               <Route path="/export" element={<Export />} />
               <Route path="/setup" element={<Setup />} />
+              <Route path="/lok-support" element={<LokSupport />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
