@@ -80,40 +80,42 @@ const LokSupport = () => {
     try {
       console.debug('Fetching LOK support data with filters:', filters);
 
-      // Step 1: Get eventraces that meet the minimum count criteria
-      let eventracesQuery = supabase
-        .from('results')
-        .select(`
-          eventraceid,
-          personid,
-          personage,
-          resultcompetitorstatus,
-          events!inner(
-            eventdate,
-            eventname
-          )
-        `)
-        .eq('clubparticipation', 114)
-        .not('resultcompetitorstatus', 'in', '(DidNotStart,Cancelled)')
-        .gte('personage', filters.minAge)
-        .lte('personage', filters.maxAge)
-        .eq('events.eventdate', 'extract', `year,${filters.year}`);
-
-      if (filters.month) {
-        eventracesQuery = eventracesQuery.eq('events.eventdate', 'extract', `month,${filters.month}`);
-      }
-
-      const { data: eligibleResults, error: eligibleError } = await eventracesQuery;
+      // Step 1: Get results that meet the criteria using RPC
+      const { data: eligibleResults, error: eligibleError } = await supabase.rpc('rpc_results_enriched', {
+        _club: 114,
+        _year: filters.year,
+        _gender: null,
+        _age_min: filters.minAge,
+        _age_max: filters.maxAge,
+        _only_championship: null,
+        _personid: null,
+        _limit: 10000,
+        _offset: 0
+      });
       
       if (eligibleError) throw eligibleError;
 
       console.debug('Eligible results count:', eligibleResults?.length || 0);
 
+      // Filter out DidNotStart and Cancelled statuses
+      const validResults = eligibleResults?.filter(result => 
+        result.resultcompetitorstatus !== 'DidNotStart' && 
+        result.resultcompetitorstatus !== 'Cancelled'
+      ) || [];
+
+      // Filter by month if specified
+      const monthFilteredResults = filters.month 
+        ? validResults.filter(result => {
+            const eventDate = new Date(result.eventdate);
+            return eventDate.getMonth() + 1 === filters.month;
+          })
+        : validResults;
+
       // Count distinct persons per eventrace (handle personid = 0 as unique)
       const eventraceCounts = new Map<number, Set<string>>();
       const eventraceInfo = new Map<number, { eventdate: string; eventname: string }>();
 
-      eligibleResults?.forEach(result => {
+      monthFilteredResults.forEach(result => {
         const key = result.personid === 0 ? `temp_${Math.random()}` : result.personid.toString();
         
         if (!eventraceCounts.has(result.eventraceid)) {
@@ -122,10 +124,10 @@ const LokSupport = () => {
         eventraceCounts.get(result.eventraceid)!.add(key);
 
         // Store event info
-        if (result.events && !eventraceInfo.has(result.eventraceid)) {
+        if (!eventraceInfo.has(result.eventraceid)) {
           eventraceInfo.set(result.eventraceid, {
-            eventdate: result.events.eventdate,
-            eventname: result.events.eventname
+            eventdate: result.eventdate,
+            eventname: result.eventname
           });
         }
       });
@@ -144,41 +146,46 @@ const LokSupport = () => {
       }
 
       // Step 2: Get all participants for qualifying eventraces
-      let allParticipantsQuery = supabase
-        .from('results')
-        .select(`
-          eventraceid,
-          personid,
-          personage,
-          resultcompetitorstatus,
-          persons!inner(
-            personnamefamily,
-            personnamegiven
-          ),
-          events!inner(
-            eventdate,
-            eventname
-          )
-        `)
-        .eq('clubparticipation', 114)
-        .not('resultcompetitorstatus', 'in', '(DidNotStart,Cancelled)')
-        .in('eventraceid', qualifyingEventraceIds);
-
-      const { data: allParticipants, error: participantsError } = await allParticipantsQuery;
+      const { data: allParticipants, error: participantsError } = await supabase.rpc('rpc_results_enriched', {
+        _club: 114,
+        _year: filters.year,
+        _gender: null,
+        _age_min: null,
+        _age_max: null,
+        _only_championship: null,
+        _personid: null,
+        _limit: 10000,
+        _offset: 0
+      });
       
       if (participantsError) throw participantsError;
 
-      console.debug('All participants count:', allParticipants?.length || 0);
+      // Filter to only qualifying eventraces and exclude DNS/Cancelled
+      const filteredParticipants = allParticipants?.filter(result => 
+        qualifyingEventraceIds.includes(result.eventraceid) &&
+        result.resultcompetitorstatus !== 'DidNotStart' && 
+        result.resultcompetitorstatus !== 'Cancelled'
+      ) || [];
+
+      // Apply month filter if specified
+      const finalParticipants = filters.month 
+        ? filteredParticipants.filter(result => {
+            const eventDate = new Date(result.eventdate);
+            return eventDate.getMonth() + 1 === filters.month;
+          })
+        : filteredParticipants;
+
+      console.debug('All participants count:', finalParticipants.length);
 
       // Group and format results
       const groupedResults = new Map<number, EventraceResult>();
 
-      allParticipants?.forEach(result => {
+      finalParticipants.forEach(result => {
         if (!groupedResults.has(result.eventraceid)) {
           groupedResults.set(result.eventraceid, {
             eventraceid: result.eventraceid,
-            eventdate: result.events?.eventdate || '',
-            eventname: result.events?.eventname || '',
+            eventdate: result.eventdate,
+            eventname: result.eventname,
             participants: [],
             eligibleCount: eventraceCounts.get(result.eventraceid)?.size || 0
           });
@@ -189,8 +196,8 @@ const LokSupport = () => {
                            result.personage <= filters.maxAge;
 
         groupedResults.get(result.eventraceid)!.participants.push({
-          personnamefamily: result.persons?.personnamefamily || null,
-          personnamegiven: result.persons?.personnamegiven || null,
+          personnamefamily: result.personnamefamily || null,
+          personnamegiven: result.personnamegiven || null,
           personage: result.personage,
           resultcompetitorstatus: result.resultcompetitorstatus,
           isInAgeRange
