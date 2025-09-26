@@ -56,13 +56,16 @@ const Index = () => {
         </div>
         <div className="mt-6 text-sm text-muted-foreground max-w-2xl">
           <p className="mb-3">
-            Denna sida är byggd av David. Den hämtar data från Eventor för FK Göingarna och FK Åsen.
+            Denna sida är byggd av David. Den hämtar data från Eventor för FK Göingarna.
           </p>
           <p className="mb-3">
-            För FK Göingarna finns en sida som presenterar data som skulle kunna användas som underlag för att ge ut vandringspris. För FK Åsen finns ingen sådan sida då befintliga vandringspris inte kan räknas ut med det regelverk som finns.
+            Sidan Vandringspris presenterar data som skulle kunna användas som underlag för att ge ut vandringspris.
+          </p>
+          <p className="mb-3">
+            Resultatstatistik och Export kan användas för data för enskilda personer eller hela klubben.
           </p>
           <p>
-            Resultatstatistik och export kan användas av båda klubbar. Observera att för FK Åsen är poängvärdet felaktigt på tävlingar i öppen klass.
+            Sidan för LOK-stöd hjälper till att hitta tävlingar som ska LOK-rapporteras.
           </p>
         </div>
       </nav>
