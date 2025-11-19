@@ -343,10 +343,38 @@ export type Database = {
             referencedColumns: ["eventraceid"]
           },
           {
+            foreignKeyName: "fk_results_event_race"
+            columns: ["eventraceid"]
+            isOneToOne: false
+            referencedRelation: "v_index114_competitions"
+            referencedColumns: ["eventraceid"]
+          },
+          {
+            foreignKeyName: "fk_results_event_race"
+            columns: ["eventraceid"]
+            isOneToOne: false
+            referencedRelation: "v_index114_results"
+            referencedColumns: ["eventraceid"]
+          },
+          {
             foreignKeyName: "fk_results_eventrace"
             columns: ["eventraceid"]
             isOneToOne: false
             referencedRelation: "events"
+            referencedColumns: ["eventraceid"]
+          },
+          {
+            foreignKeyName: "fk_results_eventrace"
+            columns: ["eventraceid"]
+            isOneToOne: false
+            referencedRelation: "v_index114_competitions"
+            referencedColumns: ["eventraceid"]
+          },
+          {
+            foreignKeyName: "fk_results_eventrace"
+            columns: ["eventraceid"]
+            isOneToOne: false
+            referencedRelation: "v_index114_results"
             referencedColumns: ["eventraceid"]
           },
           {
@@ -364,6 +392,93 @@ export type Database = {
             referencedColumns: ["organisationid"]
           },
         ]
+      }
+      results_removedrows: {
+        Row: {
+          batchid: string | null
+          classresultnumberofstarts: number | null
+          classtypeid: number | null
+          clubparticipation: number | null
+          countnopoints: number | null
+          eventclassname: string | null
+          eventid: number | null
+          eventraceid: number
+          id: number
+          klassfaktor: number | null
+          oldid: number
+          personage: number | null
+          personid: number
+          points: number | null
+          readonly: number | null
+          relayleg: number | null
+          relaylegoverallposition: number | null
+          relayteamenddiff: number | null
+          relayteamendposition: number | null
+          relayteamendstatus: string | null
+          relayteamname: string | null
+          resultcompetitorstatus: string | null
+          resultposition: number | null
+          resulttime: number | null
+          resulttimediff: number | null
+          xmlpersonname: string | null
+        }
+        Insert: {
+          batchid?: string | null
+          classresultnumberofstarts?: number | null
+          classtypeid?: number | null
+          clubparticipation?: number | null
+          countnopoints?: number | null
+          eventclassname?: string | null
+          eventid?: number | null
+          eventraceid: number
+          id?: number
+          klassfaktor?: number | null
+          oldid: number
+          personage?: number | null
+          personid: number
+          points?: number | null
+          readonly?: number | null
+          relayleg?: number | null
+          relaylegoverallposition?: number | null
+          relayteamenddiff?: number | null
+          relayteamendposition?: number | null
+          relayteamendstatus?: string | null
+          relayteamname?: string | null
+          resultcompetitorstatus?: string | null
+          resultposition?: number | null
+          resulttime?: number | null
+          resulttimediff?: number | null
+          xmlpersonname?: string | null
+        }
+        Update: {
+          batchid?: string | null
+          classresultnumberofstarts?: number | null
+          classtypeid?: number | null
+          clubparticipation?: number | null
+          countnopoints?: number | null
+          eventclassname?: string | null
+          eventid?: number | null
+          eventraceid?: number
+          id?: number
+          klassfaktor?: number | null
+          oldid?: number
+          personage?: number | null
+          personid?: number
+          points?: number | null
+          readonly?: number | null
+          relayleg?: number | null
+          relaylegoverallposition?: number | null
+          relayteamenddiff?: number | null
+          relayteamendposition?: number | null
+          relayteamendstatus?: string | null
+          relayteamname?: string | null
+          resultcompetitorstatus?: string | null
+          resultposition?: number | null
+          resulttime?: number | null
+          resulttimediff?: number | null
+          xmlpersonname?: string | null
+        }
+        Relationships: []
       }
       warnings: {
         Row: {
@@ -463,10 +578,38 @@ export type Database = {
             referencedColumns: ["eventraceid"]
           },
           {
+            foreignKeyName: "fk_results_event_race"
+            columns: ["eventraceid"]
+            isOneToOne: false
+            referencedRelation: "v_index114_competitions"
+            referencedColumns: ["eventraceid"]
+          },
+          {
+            foreignKeyName: "fk_results_event_race"
+            columns: ["eventraceid"]
+            isOneToOne: false
+            referencedRelation: "v_index114_results"
+            referencedColumns: ["eventraceid"]
+          },
+          {
             foreignKeyName: "fk_results_eventrace"
             columns: ["eventraceid"]
             isOneToOne: false
             referencedRelation: "events"
+            referencedColumns: ["eventraceid"]
+          },
+          {
+            foreignKeyName: "fk_results_eventrace"
+            columns: ["eventraceid"]
+            isOneToOne: false
+            referencedRelation: "v_index114_competitions"
+            referencedColumns: ["eventraceid"]
+          },
+          {
+            foreignKeyName: "fk_results_eventrace"
+            columns: ["eventraceid"]
+            isOneToOne: false
+            referencedRelation: "v_index114_results"
             referencedColumns: ["eventraceid"]
           },
           {
@@ -485,12 +628,71 @@ export type Database = {
           },
         ]
       }
+      v_index114_competitions: {
+        Row: {
+          disciplineid: number | null
+          eventdate: string | null
+          eventdistance: string | null
+          eventform_group: string | null
+          eventid: number | null
+          eventname: string | null
+          eventraceid: number | null
+          eventyear: number | null
+        }
+        Relationships: []
+      }
+      v_index114_results: {
+        Row: {
+          classresultnumberofstarts: number | null
+          classtypeid: number | null
+          clubparticipation: number | null
+          disciplineid: number | null
+          eventdate: string | null
+          eventdistance: string | null
+          eventform: string | null
+          eventform_group: string | null
+          eventid: number | null
+          eventname: string | null
+          eventraceid: number | null
+          eventyear: number | null
+          id: number | null
+          klassfaktor: number | null
+          personage: number | null
+          personid: number | null
+          personnamefamily: string | null
+          personnamegiven: string | null
+          personsex: string | null
+          points: number | null
+          relayleg: number | null
+          relaylegoverallposition: number | null
+          relayteamenddiff: number | null
+          relayteamendposition: number | null
+          relayteamname: string | null
+          resultcompetitorstatus: string | null
+          resultposition: number | null
+          resulttime: number | null
+          resulttimediff: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_results_org"
+            columns: ["clubparticipation"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["organisationid"]
+          },
+          {
+            foreignKeyName: "fk_results_organisation"
+            columns: ["clubparticipation"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["organisationid"]
+          },
+        ]
+      }
     }
     Functions: {
-      _normalize_gender: {
-        Args: { _g: string }
-        Returns: string
-      }
+      _normalize_gender: { Args: { _g: string }; Returns: string }
       get_results_filtered_v2: {
         Args: {
           _age_max: number
@@ -615,6 +817,12 @@ export type Database = {
           resulttime: number | null
           resulttimediff: number | null
         }[]
+        SetofOptions: {
+          from: "*"
+          to: "results_index461"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
       rpc_index461_stats: {
         Args: {
