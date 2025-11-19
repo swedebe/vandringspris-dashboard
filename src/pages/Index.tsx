@@ -3,6 +3,7 @@ import { Helmet } from "react-helmet-async";
 import { useAppTexts, t } from "@/hooks/useAppTexts";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import ekgExpertLogo from "@/assets/logo-ekg-expert.png";
 
 const Index = () => {
   const { data: texts } = useAppTexts("index", [
@@ -67,6 +68,21 @@ const Index = () => {
           <p>
             Sidan för LOK-stöd hjälper till att hitta tävlingar som ska LOK-rapporteras.
           </p>
+        </div>
+        <div className="mt-8 pt-6 border-t border-border">
+          <p className="text-xs text-muted-foreground mb-3">Denna sida sponsras av</p>
+          <a 
+            href="https://ekgexpert.se" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="inline-block transition-opacity hover:opacity-80"
+          >
+            <img 
+              src={ekgExpertLogo} 
+              alt="EKG-expert Sverige AB" 
+              className="h-16 w-auto"
+            />
+          </a>
         </div>
       </nav>
     </main>
